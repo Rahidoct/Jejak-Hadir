@@ -1,4 +1,3 @@
-// Tambahkan ini di bagian atas file
 import 'package:flutter/material.dart';
 import 'package:jejak_hadir_app/services/auth_service_local.dart';
 
@@ -10,16 +9,15 @@ class AuthScreenLocal extends StatefulWidget {
 }
 
 class _AuthScreenLocalState extends State<AuthScreenLocal> {
-  final AuthServiceLocal _auth = AuthServiceLocal();
+  final AuthServiceLocal _auth = AuthServiceLocal.instance;
   final _formKey = GlobalKey<FormState>();
   String email = '';
   String password = '';
   String name = '';
   bool isLogin = true;
   String error = '';
-  bool _isLoading = false; // Tambahkan state loading
+  bool _isLoading = false;
 
-  // Input field builder
   Widget _buildInputField(
     String label,
     Function(String) onChanged, {
@@ -45,8 +43,10 @@ class _AuthScreenLocalState extends State<AuthScreenLocal> {
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
+          // --- [PERUBAHAN TEMA] ---
+          // Mengganti gradient dari hijau ke biru.
           gradient: LinearGradient(
-            colors: [Color(0xFF4CAF50), Color(0xFF8BC34A)],
+            colors: [Color(0xFF1976D2), Color(0xFF42A5F5)], // Dari biru tua ke biru muda
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -61,7 +61,7 @@ class _AuthScreenLocalState extends State<AuthScreenLocal> {
                 children: <Widget>[
                   const SizedBox(height: 20),
                   Text(
-                    isLogin ? 'Selamat Datang Kembali!' : 'Daftar Akun Baru',
+                    isLogin ? 'Jejak Hadir Login' : 'Jejak Hadir Daftar',
                     style: const TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
@@ -69,7 +69,6 @@ class _AuthScreenLocalState extends State<AuthScreenLocal> {
                     ),
                   ),
                   const SizedBox(height: 30),
-
                   Card(
                     elevation: 10,
                     shape: RoundedRectangleBorder(
@@ -106,27 +105,27 @@ class _AuthScreenLocalState extends State<AuthScreenLocal> {
                                   : () async {
                                       if (_formKey.currentState!.validate()) {
                                         setState(() => _isLoading = true);
-                                        try {
-                                          if (isLogin) {
-                                            final user = await _auth.signInWithEmailAndPassword(email, password);
-                                            if (user == null) {
-                                              setState(() => error = 'Login gagal. Email/Password salah. Password default: "password123"');
-                                            }
-                                          } else {
-                                            final user = await _auth.registerWithEmailAndPassword(email, password, name);
-                                            if (user == null) {
-                                              setState(() => error = 'Pendaftaran gagal. Email mungkin sudah terdaftar.');
-                                            }
+                                        dynamic result;
+                                        if (isLogin) {
+                                          result = await _auth.signInWithEmailAndPassword(email, password);
+                                          if (result == null) {
+                                            setState(() => error = 'Login gagal. Email/Password salah.');
                                           }
-                                        } finally {
-                                          if (mounted) {
-                                            setState(() => _isLoading = false);
+                                        } else {
+                                          result = await _auth.registerWithEmailAndPassword(email, password, name);
+                                          if (result == null) {
+                                            setState(() => error = 'Pendaftaran gagal. Coba lagi.');
                                           }
+                                        }
+                                        if (mounted) {
+                                          setState(() => _isLoading = false);
                                         }
                                       }
                                     },
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF388E3C),
+                                // --- [PERUBAHAN TEMA] ---
+                                // Mengganti warna tombol dari hijau ke biru.
+                                backgroundColor: Colors.blue.shade700,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(vertical: 15),
                                 shape: RoundedRectangleBorder(
