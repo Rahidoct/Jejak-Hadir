@@ -31,7 +31,10 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
   final int _dutyCount = 0;
   final int _alphaCount = 0;
 
-  late final List<Widget> _screens;
+  // --- [PERBAIKAN #1] Tambahkan variabel untuk Key ---
+  // Ini akan bertindak sebagai "tanda pengenal" unik untuk Halaman Riwayat.
+  int _historyKey = 0;
+
   final LocalStorageService _storageService = LocalStorageService();
   final Uuid _uuid = const Uuid();
 
@@ -39,14 +42,6 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
   void initState() {
     super.initState();
     initializeDateFormatting('id_ID', null);
-    
-    _screens = [
-      _buildDashboardScreen(),
-      HistoryScreenLocal(userId: widget.user.uid),
-      ScheduleScreen(user: widget.user),
-      ProfileScreen(user: widget.user),
-    ];
-
     _loadInitialData();
   }
   
@@ -58,11 +53,7 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
   Future<void> _loadLastAttendanceStatus() async {
     final attendances = await _storageService.getAttendancesByUserId(widget.user.uid);
     final now = DateTime.now();
-    final todayAttendances = attendances.where((att) => 
-        att.timestamp.year == now.year &&
-        att.timestamp.month == now.month &&
-        att.timestamp.day == now.day
-    ).toList();
+    final todayAttendances = attendances.where((att) => DateUtils.isSameDay(att.timestamp, now)).toList();
     if (mounted) {
       setState(() {
         _hasCheckedInToday = todayAttendances.any((att) => att.type == 'check_in');
@@ -107,6 +98,12 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
       final newAttendance = LocalAttendance(id: _uuid.v4(), userId: widget.user.uid, type: type, timestamp: DateTime.now(), latitude: position.latitude, longitude: position.longitude);
       await _storageService.addAttendance(newAttendance);
       
+      // --- [PERBAIKAN #2] Perbarui Key setelah absensi berhasil ---
+      // Ini akan memaksa HistoryScreenLocal untuk dibangun ulang dari awal
+      setState(() {
+        _historyKey++;
+      });
+
       await _loadInitialData();
       // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sipph absen ${type == 'check_in' ? 'masuk' : 'pulang'}, berhasil!')));
@@ -119,6 +116,9 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
   }
 
   bool _isWithinCheckInWindow() {
+    // --- HANYA UNTUK TESTING ---
+    // return true; // Selalu kembalikan true agar tombol selalu muncul
+
     final now = DateTime.now();
     final startTime = DateTime(now.year, now.month, now.day, 6, 0);
     final endTime = DateTime(now.year, now.month, now.day, 10, 0);
@@ -126,6 +126,9 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
   }
 
   bool _isWithinCheckOutWindow() {
+    // --- HANYA UNTUK TESTING ---
+    // return true; // Selalu kembalikan true agar tombol selalu muncul
+
     final now = DateTime.now();
     final startTime = DateTime(now.year, now.month, now.day, 14, 30);
     final endTime = DateTime(now.year, now.month, now.day, 17, 0);
@@ -139,12 +142,7 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
         return AlertDialog(
           title: Text('Ajukan Konfirmasi ${type == 'check_in' ? 'Hadir' : 'Pulang'}'),
           content: const Text('Fitur ini sedang dalam pengembangan.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('OK'),
-            ),
-          ],
+          actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK'))],
         );
       },
     );
@@ -157,12 +155,7 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
         return AlertDialog(
           title: Text('Pengajuan $title'),
           content: Text('Fitur untuk mengajukan $title sedang dalam pengembangan.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('OK'),
-            ),
-          ],
+          actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK'))],
         );
       },
     );
@@ -170,7 +163,14 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
 
   @override
   Widget build(BuildContext context) {
-    _screens[0] = _buildDashboardScreen();
+    // --- [PERBAIKAN #3] Bangun daftar screen di dalam build method ---
+    // Ini memastikan bahwa HistoryScreenLocal selalu dibuat dengan Key yang terbaru.
+    final List<Widget> screens = [
+      _buildDashboardScreen(),
+      HistoryScreenLocal(key: ValueKey(_historyKey), userId: widget.user.uid),
+      ScheduleScreen(user: widget.user),
+      ProfileScreen(user: widget.user),
+    ];
     
     return Scaffold(
       appBar: AppBar(
@@ -181,7 +181,7 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
       ),
       body: IndexedStack(
         index: _currentIndex,
-        children: _screens,
+        children: screens, // Gunakan daftar screen yang baru dibuat
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
@@ -210,8 +210,6 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
     }
   }
 
-  // --- [PERBAIKAN UTAMA DI SINI] ---
-  // Urutan widget di dalam Column diatur ulang sesuai keinginan.
   Widget _buildDashboardScreen() {
     final now = DateTime.now();
     final formattedDate = DateFormat('EEEE, d MMMM yyyy', 'id_ID').format(now);
@@ -221,29 +219,21 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 1. Profil & Statistik
           _buildProfileCard(),
           const SizedBox(height: 24),
-
-          // 2. Card untuk tombol absensi
           _buildAttendance(formattedDate),
           const SizedBox(height: 24),
-
-          // 3. Menu Aksi Cepat dengan Ikon-ikon
           _buildActionMenu(),
           const SizedBox(height: 24),
-          
-          // 4. Card untuk kegiatan
           _buildActivity(),
         ],
       ),
     );
   }
-  // --- [AKHIR PERBAIKAN] ---
 
   Card _buildProfileCard() {
     return Card(
-      elevation: 4, // Sedikit dinaikkan agar lebih menonjol
+      elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -257,33 +247,29 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
                   child: Text(widget.user.name.isNotEmpty ? widget.user.name[0].toUpperCase() : '?', style: TextStyle(fontSize: 28, color: Colors.blue.shade800, fontWeight: FontWeight.bold)),
                 ),
                 const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(widget.user.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 4),
-                      Text('NIP: ${widget.user.nip ?? '-'}', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-                      const SizedBox(height: 4),
-                      Text('PUSKESMAS BUNDER', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-                    ],
-                  ),
-                ),
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(widget.user.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    Text('NIP: ${widget.user.nip ?? '-'}', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                    const SizedBox(height: 4),
+                    Text('PUSKESMAS BUNDER', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                  ],
+                )),
               ],
             ),
-            const SizedBox(height: 8), // Jarak dikurangi sedikit
-            Row(
-              children: [
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Jabatan', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-                  Text(widget.user.position ?? '-', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
-                ])),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Golongan', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-                  Text(widget.user.grade ?? '-', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                ])),
-              ],
-            ),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Jabatan', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                Text(widget.user.position ?? '-', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+              ])),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Golongan', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                Text(widget.user.grade ?? '-', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+              ])),
+            ]),
             const Divider(height: 24, thickness: 1),
             _buildStatsRow(),
           ],
@@ -347,76 +333,23 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
     );
   }
 
-  // Card _buildActivityCard() {
-  //   return Card(
-  //     elevation: 2,
-  //     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-  //     child: Padding(
-  //       padding: const EdgeInsets.all(16.0),
-  //       child: Column(
-  //         crossAxisAlignment: CrossAxisAlignment.start,
-  //         children: [
-  //           const Text('Kegiatan yang diikuti', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-  //           const SizedBox(height: 16),
-  //           Container(
-  //             padding: const EdgeInsets.all(16),
-  //             decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(8)),
-  //             child: const Center(child: Text('Belum ada jadwal kegiatan', style: TextStyle(color: Colors.grey))),
-  //           ),
-  //         ],
-  //       ),
-  //     ),
-  //   );
-  // }
-
   Widget _buildActivity() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        const Text(
-          'Kegiatan Yang Diikuti',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        const Text('Kegiatan Yang Diikuti', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         const SizedBox(height: 16),
-        // Jika belum ada jadwal kegiatan, tampilkan pesan
         Container(
-          width: double.infinity, // Memastikan container mengambil lebar penuh
+          width: double.infinity,
           padding: const EdgeInsets.all(16),
           child: const Center(
-            child: Text(
-              'Belum ada jadwal kegiatan',
-              style: TextStyle(color: Colors.grey),
-            ),
+            child: Text('Belum ada jadwal kegiatan', style: TextStyle(color: Colors.grey)),
           ),
         ),
       ],
     );
   }
   
-  // Card _buildAttendanceCard(String formattedDate) {
-  //   return Card(
-  //     elevation: 4, 
-  //     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-  //     child: Padding(
-  //       padding: const EdgeInsets.all(16.0),
-  //       child: Column(
-  //         crossAxisAlignment: CrossAxisAlignment.stretch,
-  //         children: [
-  //           Text(formattedDate, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-  //           const SizedBox(height: 16),
-  //           if (_isProcessing)
-  //             const Center(child: CircularProgressIndicator())
-  //           else
-  //             _buildAttendanceActionWidget(),
-  //         ],
-  //       ),
-  //     ),
-  //   );
-  // }
-
   Widget _buildAttendance(String formattedDate) {
     return Container(
       padding: const EdgeInsets.all(16.0),
@@ -438,7 +371,7 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
     final now = DateTime.now();
 
     if (_hasCheckedInToday && _hasCheckedOutToday) {
-      return const _StatusInfo(message: 'Anda sudah menyelesaikan absensi hari ini.', icon: Icons.check_circle_outline, color: Colors.green);
+      return const _StatusInfo(message: 'Absensi sudah selesai hari ini.', icon: Icons.check_circle_outline, color: Colors.green);
     }
 
     if (_hasCheckedInToday) {
@@ -450,7 +383,7 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
           style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         );
       } else {
-        return const _StatusInfo(message: 'Waktu absensi pulang jam 14:30 - 17:00.', icon: Icons.timer_outlined, color: Colors.orange);
+        return const _StatusInfo(message: 'Absensi pulang dimulai jam 14:30.', icon: Icons.timer_outlined, color: Colors.orange);
       }
     }
 
@@ -472,7 +405,7 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
         );
       } 
       else {
-        return const _StatusInfo(message: 'Waktu absensi masuk jam 06:00 - 10:00.', icon: Icons.timer_off_outlined, color: Colors.grey);
+        return const _StatusInfo(message: 'Absensi masuk dimulai jam 06:00.', icon: Icons.timer_off_outlined, color: Colors.grey);
       }
     }
 

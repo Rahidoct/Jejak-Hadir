@@ -36,4 +36,8 @@ class LocalUser {
       grade: map['grade'] as String?,
     );
   }
+
+  static LocalUser fromJson(Map<String, dynamic> json) {
+    return LocalUser.fromMap(json);
+  }
 }

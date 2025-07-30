@@ -7,6 +7,7 @@ import '../models/attendance_local.dart';
 import '../services/local_storage_service.dart';
 import 'monthly_detail_screen.dart';
 
+// Diubah menjadi StatefulWidget agar bisa memuat ulang data secara dinamis
 class HistoryScreenLocal extends StatefulWidget {
   final String userId;
   const HistoryScreenLocal({super.key, required this.userId});
@@ -17,7 +18,8 @@ class HistoryScreenLocal extends StatefulWidget {
 
 class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
   final LocalStorageService _localStorageService = LocalStorageService();
-  late Future<List<LocalAttendance>> _allAttendancesFuture;
+  // Gunakan Future sebagai variabel state
+  late Future<List<LocalAttendance>> _attendancesFuture;
   
   int _selectedYear = DateTime.now().year; 
   List<int> _availableYears = [];
@@ -26,8 +28,28 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
   void initState() {
     super.initState();
     initializeDateFormatting('id_ID', null);
-    _allAttendancesFuture = _localStorageService.getAttendancesByUserId(widget.userId);
+    // Panggil future pertama kali saat widget dibuat
+    _reloadData();
   }
+
+  // --- [PERBAIKAN KRUSIAL DI SINI] ---
+  // Metode ini akan dipanggil setiap kali pengguna kembali ke tab Riwayat,
+  // memaksa data untuk dimuat ulang.
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reloadData();
+  }
+
+  // Fungsi helper untuk memuat ulang data agar tidak duplikat kode
+  void _reloadData() {
+    if (mounted) {
+      setState(() {
+        _attendancesFuture = _localStorageService.getAttendancesByUserId(widget.userId);
+      });
+    }
+  }
+  // --- AKHIR PERBAIKAN ---
 
   Widget _buildYearFilter(List<LocalAttendance> allAttendances) {
     _availableYears = allAttendances
@@ -84,11 +106,9 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // --- [PERUBAHAN DI SINI] ---
-      // Latar belakang halaman utama diatur menjadi putih bersih.
       backgroundColor: Colors.white,
       body: FutureBuilder<List<LocalAttendance>>(
-        future: _allAttendancesFuture,
+        future: _attendancesFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -137,13 +157,7 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
                     itemBuilder: (context, index) {
                       final monthName = monthKeys[index];
                       final monthlyAttendances = groupedByMonth[monthName]!;
-                      
-                      final uniqueCheckInDays = monthlyAttendances
-                          .where((att) => att.type == 'check_in')
-                          .map((att) => DateFormat('yyyy-MM-dd').format(att.timestamp))
-                          .toSet()
-                          .length;
-                          
+                      final uniqueCheckInDays = monthlyAttendances.where((att) => att.type == 'check_in').map((att) => DateFormat('yyyy-MM-dd').format(att.timestamp)).toSet().length;
                       const sakitCount = 0;
                       const cutiCount = 0;
                       const dinasLuarCount = 0;
@@ -151,17 +165,10 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
                       final jumlahHari = uniqueCheckInDays;
 
                       return Card(
-                        // --- [PERUBAHAN DI SINI] ---
-                        // Warna Card diatur secara eksplisit menjadi putih.
-                        // Walaupun defaultnya sudah putih, ini untuk memastikan.
                         color: Colors.white,
                         margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
-                        elevation: 3, // Bayangan sedikit lebih tebal agar terlihat jelas di atas background putih
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          // Anda bisa tambahkan border tipis jika ingin pemisah yang lebih jelas
-                          // side: BorderSide(color: Colors.grey.shade200, width: 1),
-                        ),
+                        elevation: 3,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         child: InkWell(
                           onTap: () {
                             Navigator.push(
@@ -191,7 +198,6 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
                                   ],
                                 ),
                                 const Divider(height: 20),
-                                
                                 Row(
                                   children: [
                                     _buildStatItem("Hadir", uniqueCheckInDays.toString()),
@@ -200,7 +206,6 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
                                   ],
                                 ),
                                 const SizedBox(height: 12),
-                                
                                 Row(
                                   children: [
                                     _buildStatItem("Tidak Hadir", tidakHadirCount.toString()),
