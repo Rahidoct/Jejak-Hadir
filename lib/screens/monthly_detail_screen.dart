@@ -96,7 +96,7 @@ class MonthlyDetailScreen extends StatelessWidget {
         // Menambahkan `foregroundColor` akan mengubah warna semua ikon (termasuk tombol kembali)
         // dan teks default (termasuk judul) di dalam AppBar menjadi putih.
         foregroundColor: Colors.white,
-        title: const Text('Detail Riwayat Kehadiran'),
+        title: const Text('Riwayat Kehadiran'),
         backgroundColor: Colors.blue,
       ),
       body: ListView.builder(

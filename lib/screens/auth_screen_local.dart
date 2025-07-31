@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:jejak_hadir_app/helpers/notification_helper.dart';
 import 'package:jejak_hadir_app/services/auth_service_local.dart';
 
 class AuthScreenLocal extends StatefulWidget {
@@ -10,18 +11,68 @@ class AuthScreenLocal extends StatefulWidget {
 
 class _AuthScreenLocalState extends State<AuthScreenLocal> {
   final AuthServiceLocal _auth = AuthServiceLocal.instance;
-  
   final _formKey = GlobalKey<FormState>();
   String email = '';
   String password = '';
   String name = '';
   bool isLogin = true;
-  String error = '';
   bool _isLoading = false;
   bool _isPasswordVisible = false;
 
-  // --- [PERBAIKAN LOGIKA DISINI] ---
-  // Fungsi untuk menangani proses submit form
+  // --- LOGIKA UTAMA UNTUK SUBMIT FORM DENGAN NOTIFIKASI BARU ---
+  void _submitForm() async {
+    // Sembunyikan keyboard untuk UX yang lebih baik
+    FocusScope.of(context).unfocus();
+
+    if (_formKey.currentState!.validate()) {
+      setState(() { _isLoading = true; });
+
+      dynamic result;
+      if (isLogin) {
+        // Proses Login
+        result = await _auth.signInWithEmailAndPassword(email, password, context);
+        if (result == null && mounted) {
+          NotificationHelper.show(
+            context,
+            title: "Yah.. Login Gagal!",
+            message: "Sepertinya email atau password yang kamu ketik salah. Coba lagi yuk.",
+            type: NotificationType.error,
+          );
+        }
+      } else {
+        // Proses Pendaftaran
+        result = await _auth.registerWithEmailAndPassword(email, password, name);
+        if (result == null && mounted) {
+          NotificationHelper.show(
+            context,
+            title: "Pendaftaran Gagal!",
+            message: "Sepertinya email ini sudah terdaftar. Silakan gunakan email lain.",
+            type: NotificationType.error,
+          );
+        } else if (result != null && mounted) {
+          // Pendaftaran berhasil, tampilkan notifikasi sukses
+          NotificationHelper.show(
+            context,
+            title: "Pendaftaran Berhasil!",
+            message: "Mantap! Akun telah berhasil dibuat. Yuk masuk sekarang.",
+            type: NotificationType.success,
+          );
+          // Pindahkan ke halaman login & bersihkan form
+          setState(() {
+            isLogin = true;
+            _formKey.currentState?.reset();
+          });
+        }
+      }
+      
+      // Matikan loading indicator setelah semua proses selesai
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  // Helper untuk membangun input field (tidak ada perubahan)
   Widget _buildTextField({
     required String label,
     required IconData icon,
@@ -79,12 +130,10 @@ class _AuthScreenLocalState extends State<AuthScreenLocal> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  // --- [PERBAIKAN DI SINI] ---
-                  // Row header sekarang diatur agar berada di tengah
+                  // --- BAGIAN HEADER & LOGO ---
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.center, // Ini kuncinya
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Logo Dummy
                       Container(
                         width: 70,
                         height: 70,
@@ -93,11 +142,9 @@ class _AuthScreenLocalState extends State<AuthScreenLocal> {
                           color: Colors.grey.shade200,
                           border: Border.all(color: Colors.grey.shade300),
                         ),
-                        // ubah icon aplikasi disini 
                         child: const Icon(Icons.location_city, size: 40, color: Colors.grey),
                       ),
                       const SizedBox(width: 16),
-                      // Kolom untuk teks tetap rata kiri
                       const Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -108,7 +155,6 @@ class _AuthScreenLocalState extends State<AuthScreenLocal> {
                     ],
                   ),
                   const SizedBox(height: 40),
-                  // --- AKHIR PERBAIKAN ---
 
                   // --- JUDUL FORM ---
                   Text(
@@ -149,50 +195,7 @@ class _AuthScreenLocalState extends State<AuthScreenLocal> {
 
                   // --- TOMBOL AKSI ---
                   ElevatedButton(
-                    onPressed: _isLoading 
-                        ? null 
-                        : () async {
-                            if (_formKey.currentState!.validate()) {
-                              setState(() => _isLoading = true);
-                              dynamic result;
-                              
-                              if (isLogin) {
-                                result = await _auth.signInWithEmailAndPassword(email, password);
-                                if (result == null) {
-                                  setState(() => error = 'Login gagal. Email/Password salah.');
-                                }
-                              } else {
-                                result = await _auth.registerWithEmailAndPassword(email, password, name);
-                                if (result == null) {
-                                  setState(() => error = 'Pendaftaran gagal. Coba lagi.');
-                                } else {
-                                  // INI BAGIAN YANG DITAMBAHKAN
-                                  // Reset form setelah pendaftaran berhasil
-                                  setState(() {
-                                    isLogin = !isLogin;
-                                    error = '';
-                                    // Tambahkan ini untuk reset form saat toggle login/daftar
-                                    _formKey.currentState?.reset();
-                                    email = '';
-                                    password = '';
-                                    name = '';
-                                  });
-                                  // Tampilkan pesan sukses
-                                  // ignore: use_build_context_synchronously
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Pendaftaran berhasil! Silakan login.'),
-                                      backgroundColor: Colors.green,
-                                    ),
-                                  );
-                                }
-                              }
-                              
-                              if (mounted) {
-                                setState(() => _isLoading = false);
-                              }
-                            }
-                          },
+                    onPressed: _isLoading ? null : _submitForm, // Panggil fungsi _submitForm yang baru
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 18),
                       backgroundColor: Colors.blue.shade700,
@@ -220,7 +223,7 @@ class _AuthScreenLocalState extends State<AuthScreenLocal> {
                         onPressed: _isLoading ? null : () {
                           setState(() {
                             isLogin = !isLogin;
-                            error = '';
+                            _formKey.currentState?.reset(); // Bersihkan form saat berpindah
                           });
                         },
                         child: Text(
@@ -230,17 +233,6 @@ class _AuthScreenLocalState extends State<AuthScreenLocal> {
                       ),
                     ],
                   ),
-                  
-                  // --- PESAN ERROR ---
-                  if (error.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10.0),
-                      child: Text(
-                        error,
-                        style: const TextStyle(color: Colors.red, fontSize: 14.0),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -250,5 +242,3 @@ class _AuthScreenLocalState extends State<AuthScreenLocal> {
     );
   }
 }
-
-// kode akses awal

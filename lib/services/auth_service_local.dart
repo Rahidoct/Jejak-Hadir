@@ -1,8 +1,11 @@
+// ignore_for_file: avoid_print
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:jejak_hadir_app/models/user_local.dart';
 import 'package:jejak_hadir_app/services/local_storage_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:jejak_hadir_app/helpers/notification_helper.dart';
 
 class AuthServiceLocal {
   AuthServiceLocal._internal() {
@@ -14,7 +17,6 @@ class AuthServiceLocal {
   final StreamController<LocalUser?> _userStreamController = StreamController<LocalUser?>.broadcast();
   Stream<LocalUser?> get user => _userStreamController.stream;
   
-  // --- [BARU] Kunci untuk menyimpan Map password ---
   static const String _userPasswordsKey = 'user_passwords_map';
 
   Future<void> _initUserStream() async {
@@ -24,24 +26,20 @@ class AuthServiceLocal {
     }
   }
 
-  // --- [PERBAIKAN LOGIKA DAFTAR] ---
   Future<LocalUser?> registerWithEmailAndPassword(String email, String password, String name) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final allUsers = await _localStorageService.getRegisteredUsers();
       if (allUsers.any((user) => user.email == email)) {
-        // ignore: avoid_print
         print("Registrasi Gagal: Email sudah terdaftar.");
         return null;
       }
       
-      // 1. Simpan password pengguna ke dalam Map
       final passwordsString = prefs.getString(_userPasswordsKey) ?? '{}';
       final passwordsMap = jsonDecode(passwordsString) as Map<String, dynamic>;
-      passwordsMap[email] = password; // Simpan password baru
+      passwordsMap[email] = password;
       await prefs.setString(_userPasswordsKey, jsonEncode(passwordsMap));
       
-      // 2. Buat & Simpan data pengguna
       final newUser = LocalUser(
         uid: email, email: email, name: name,
         nip: '199110032023211001', position: 'DOKTER AHLI PERTAMA', grade: 'X',
@@ -50,54 +48,73 @@ class AuthServiceLocal {
       
       return newUser;
     } catch (e) {
-      // ignore: avoid_print
       print("Error saat registrasi: $e");
       return null;
     }
   }
 
-  // --- [PERBAIKAN LOGIKA LOGIN] ---
-  Future<LocalUser?> signInWithEmailAndPassword(String email, String password) async {
+  Future<LocalUser?> signInWithEmailAndPassword(String email, String password, BuildContext context) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final allUsers = await _localStorageService.getRegisteredUsers();
 
-      // 1. Cek apakah password cocok
-      final passwordsString = prefs.getString(_userPasswordsKey) ?? '{}';
-      final passwordsMap = jsonDecode(passwordsString) as Map<String, dynamic>;
-      if (passwordsMap[email] != password) {
-        // ignore: avoid_print
-        print("Login Gagal: Password salah.");
-        return null; // Password tidak cocok atau email tidak ada di map password
-      }
-
-      // 2. Jika password cocok, ambil data user
-      LocalUser? userToLogin;
-      try {
-        userToLogin = allUsers.firstWhere((user) => user.email == email);
-      } catch (e) {
-        userToLogin = null;
-      }
-      
-      if (userToLogin == null) {
-        // ignore: avoid_print
-        print("Login Gagal: User data tidak ditemukan (konsistensi error).");
+      // 1. Cek apakah email terdaftar
+      final userExists = allUsers.any((user) => user.email == email);
+      if (!userExists) {
+        print("Login Gagal: Email tidak terdaftar");
+        NotificationHelper.show(
+          // ignore: use_build_context_synchronously
+          context,
+          title: "Penyebabnya Disini",
+          message: "Login gagal disebabkan email yang kamu ketik tidak terdaftar",
+          type: NotificationType.info,
+        );
         return null;
       }
 
-      // 3. Login berhasil
+      // 2. Cek password
+      final passwordsString = prefs.getString(_userPasswordsKey) ?? '{}';
+      final passwordsMap = jsonDecode(passwordsString) as Map<String, dynamic>;
+      if (passwordsMap[email] != password) {
+        print("Login Gagal: Password salah");
+        NotificationHelper.show(
+          // ignore: use_build_context_synchronously
+          context,
+          title: "Penyebabnya Disini",
+          message: "Login gagal disebabkan password yang kamu ketik salah",
+          type: NotificationType.info,
+        );
+        return null;
+      }
+
+      // 3. Jika semua valid, lanjutkan login
+      final userToLogin = allUsers.firstWhere((user) => user.email == email);
       await _localStorageService.saveCurrentUser(userToLogin);
       _userStreamController.add(userToLogin);
+      
+      NotificationHelper.show(
+        // ignore: use_build_context_synchronously
+        context,
+        title: "Login Berhasil",
+        message: "Selamat datang ${userToLogin.name}",
+        type: NotificationType.success,
+      );
+      
       return userToLogin;
 
     } catch (e) {
-      // ignore: avoid_print
       print("Error saat login: $e");
+      NotificationHelper.show(
+        // ignore: use_build_context_synchronously
+        context,
+        title: "Error Sistem",
+        message: "Terjadi kesalahan saat login. Silakan coba lagi.",
+        type: NotificationType.error,
+      );
       return null;
     }
   }
   
-  // --- [BARU] Fungsi Ubah Password yang sesungguhnya ---
   Future<bool> changePassword({
     required String email,
     required String oldPassword,
@@ -108,35 +125,48 @@ class AuthServiceLocal {
       final passwordsString = prefs.getString(_userPasswordsKey) ?? '{}';
       final passwordsMap = jsonDecode(passwordsString) as Map<String, dynamic>;
 
-      // Verifikasi password lama
       if (passwordsMap[email] != oldPassword) {
-        // ignore: avoid_print
         print("Ubah Password Gagal: Password lama salah.");
         return false;
       }
 
-      // Simpan password baru
       passwordsMap[email] = newPassword;
       await prefs.setString(_userPasswordsKey, jsonEncode(passwordsMap));
-      // ignore: avoid_print
       print("Password berhasil diubah untuk $email");
       return true;
 
     } catch (e) {
-      // ignore: avoid_print
       print("Error saat ubah password: $e");
       return false;
     }
   }
 
-  Future<void> signOut() async {
+  Future<void> signOut(BuildContext context) async {
     try {
-      // clearCurrentUser sekarang menjadi AMAN untuk dipanggil
       await _localStorageService.clearCurrentUser();
       _userStreamController.add(null);
+      
+      // Tambahkan notifikasi logout berhasil
+      NotificationHelper.show(
+        // ignore: use_build_context_synchronously
+        context,
+        title: "Logout Berhasil",
+        message: "Kamu telah berhasil keluar, Jangan lupa login lagi yah..",
+        type: NotificationType.info,
+      );
     } catch (e) {
-      // ignore: avoid_print
       print("Error saat sign out: $e");
+      NotificationHelper.show(
+        // ignore: use_build_context_synchronously
+        context,
+        title: "Logout Gagal",
+        message: "Gagal melakukan logout, Cek koneksi internet kamu.",
+        type: NotificationType.error,
+      );
     }
+  }
+
+  void dispose() {
+    _userStreamController.close();
   }
 }

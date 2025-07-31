@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:jejak_hadir_app/models/user_local.dart';
-import 'package:jejak_hadir_app/services/auth_service_local.dart';
+import '../models/user_local.dart';
+import '../services/auth_service_local.dart';
+import '../helpers/notification_helper.dart';
 
 // Halaman untuk melihat detail profil (tidak berubah)
 class ViewProfileDetailScreen extends StatelessWidget {
@@ -30,40 +31,25 @@ class ViewProfileDetailScreen extends StatelessWidget {
   }
 }
 
-// Halaman Profil Utama (tidak berubah)
 class ProfileScreen extends StatefulWidget {
   final LocalUser user;
   const ProfileScreen({super.key, required this.user});
-
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
   void _showLogoutConfirmation(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Konfirmasi Logout'),
-          content: const Text('Apakah Anda yakin ingin keluar?'),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Batal'),
-              onPressed: () => Navigator.of(dialogContext).pop(),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              onPressed: () {
-                AuthServiceLocal.instance.signOut();
-                if (Navigator.of(context).canPop()) {
-                   Navigator.of(context).popUntil((route) => route.isFirst);
-                }
-              },
-              child: const Text('Logout', style: TextStyle(color: Colors.white)),
-            ),
-          ],
-        );
+    NotificationHelper.show(
+      context,
+      title: "Konfirmasi Logout",
+      message: "Apakah Anda yakin ingin keluar dari akun Anda?",
+      type: NotificationType.confirm,
+      onConfirm: () {
+        AuthServiceLocal.instance.signOut(context);
+        if (Navigator.of(context).canPop()) {
+           Navigator.of(context).popUntil((route) => route.isFirst);
+        }
       },
     );
   }
@@ -74,7 +60,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (BuildContext modalContext) {
-        // Kirim email user ke form agar bisa digunakan untuk ubah password
         return ChangePasswordForm(userEmail: widget.user.email); 
       },
     );
@@ -168,10 +153,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
-// --- [PERBAIKAN UTAMA DI SINI] ---
-// Widget terpisah untuk Form di dalam Modal
 class ChangePasswordForm extends StatefulWidget {
-  final String userEmail; // Menerima email pengguna aktif
+  final String userEmail;
   const ChangePasswordForm({super.key, required this.userEmail});
   @override
   // ignore: library_private_types_in_public_api
@@ -184,8 +167,6 @@ class _ChangePasswordFormState extends State<ChangePasswordForm> {
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
-
-  // State visibilitas untuk SEMUA field password
   bool _isOldPasswordVisible = false;
   bool _isNewPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
@@ -199,33 +180,30 @@ class _ChangePasswordFormState extends State<ChangePasswordForm> {
     super.dispose();
   }
 
-  // --- [PERBAIKAN LOGIKA SUBMIT] ---
   void _submitChangePassword() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
-
-      // Panggil fungsi changePassword yang asli
       final result = await AuthServiceLocal.instance.changePassword(
         email: widget.userEmail,
         oldPassword: _oldPasswordController.text,
         newPassword: _newPasswordController.text,
       );
       
-      // Beri umpan balik ke pengguna
       if (mounted) {
+        Navigator.of(context).pop();
         if (result) {
-          // Jika berhasil
-          Navigator.of(context).pop();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Password berhasil diubah!'), backgroundColor: Colors.green),
+          NotificationHelper.show(context,
+            title: "Yay.. Berhasil",
+            message: "Password kamu telah berhasil diperbarui.",
+            type: NotificationType.success,
           );
         } else {
-          // Jika gagal (kemungkinan password lama salah)
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Gagal mengubah password. Pastikan password lama Anda benar.'), backgroundColor: Colors.red),
+          NotificationHelper.show(context,
+            title: "Aduh..Gagal!",
+            message: "Coba deh cek password lama kamu bener engga.?",
+            type: NotificationType.error,
           );
         }
-        setState(() => _isLoading = false);
       }
     }
   }

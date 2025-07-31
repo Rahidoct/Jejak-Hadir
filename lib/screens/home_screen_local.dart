@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
-import 'package:jejak_hadir_app/models/attendance_local.dart';
-import 'package:jejak_hadir_app/services/local_storage_service.dart';
+import '../helpers/notification_helper.dart';
+import '../models/attendance_local.dart';
+import '../services/local_storage_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:uuid/uuid.dart';
 
@@ -31,10 +32,7 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
   final int _dutyCount = 0;
   final int _alphaCount = 0;
 
-  // --- [PERBAIKAN #1] Tambahkan variabel untuk Key ---
-  // Ini akan bertindak sebagai "tanda pengenal" unik untuk Halaman Riwayat.
   int _historyKey = 0;
-
   final LocalStorageService _storageService = LocalStorageService();
   final Uuid _uuid = const Uuid();
 
@@ -86,30 +84,63 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
     
     var status = await Permission.location.request();
     if (!status.isGranted) {
-      // ignore: use_build_context_synchronously
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Izin lokasi diperlukan untuk absensi.')));
       setState(() => _isProcessing = false);
+      NotificationHelper.show(
+        // ignore: use_build_context_synchronously
+        context,
+        title: "Akses Ditolak",
+        message: "Izin lokasi diperlukan nih, untuk melakukan absensi.",
+        type: NotificationType.error,
+      );
       return;
     }
 
     try {
       // ignore: deprecated_member_use
       Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-      final newAttendance = LocalAttendance(id: _uuid.v4(), userId: widget.user.uid, type: type, timestamp: DateTime.now(), latitude: position.latitude, longitude: position.longitude);
-      await _storageService.addAttendance(newAttendance);
+      final now = DateTime.now();
+      final newAttendance = LocalAttendance(
+        id: _uuid.v4(),
+        userId: widget.user.uid,
+        type: type,
+        timestamp: now,
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
       
-      // --- [PERBAIKAN #2] Perbarui Key setelah absensi berhasil ---
-      // Ini akan memaksa HistoryScreenLocal untuk dibangun ulang dari awal
-      setState(() {
-        _historyKey++;
-      });
-
+      await _storageService.addAttendance(newAttendance);
+      setState(() { _historyKey++; });
       await _loadInitialData();
-      // ignore: use_build_context_synchronously
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sipph absen ${type == 'check_in' ? 'masuk' : 'pulang'}, berhasil!')));
+
+      // Cek jika absen masuk dan di atas jam 08:00
+      if (type == 'check_in' && now.hour >= 8) {
+        NotificationHelper.show(
+          // ignore: use_build_context_synchronously
+          context,
+          title: "Astagfirullah!",
+          message: "Jam segini baru datang? Hadeh! Yang bener aja!",
+          type: NotificationType.info,
+        );
+      } 
+      // Untuk semua kondisi lain (absen sebelum 08:00 atau absen pulang)
+      else {
+        NotificationHelper.show(
+          // ignore: use_build_context_synchronously
+          context,
+          title: "Sipph!",
+          message: "Absen ${type == 'check_in' ? 'masuk' : 'pulang'} berhasil tercatat.",
+          type: NotificationType.success,
+        );
+      }
+
     } catch (e) {
-      // ignore: use_build_context_synchronously
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal mendapatkan lokasi: $e')));
+      NotificationHelper.show(
+        // ignore: use_build_context_synchronously
+        context,
+        title: "Terjadi Kesalahan",
+        message: "Gagal mendapatkan lokasi. Pastikan GPS kamu aktif yah.",
+        type: NotificationType.error,
+      );
     } finally {
       if(mounted) setState(() => _isProcessing = false);
     }
