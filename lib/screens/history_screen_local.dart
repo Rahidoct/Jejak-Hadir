@@ -2,15 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:collection/collection.dart';
+import 'package:jejak_hadir_app/models/user_local.dart'; // Import model user
 
 import '../models/attendance_local.dart';
 import '../services/local_storage_service.dart';
 import 'monthly_detail_screen.dart';
 
-// Diubah menjadi StatefulWidget agar bisa memuat ulang data secara dinamis
 class HistoryScreenLocal extends StatefulWidget {
   final String userId;
-  const HistoryScreenLocal({super.key, required this.userId});
+  final LocalUser user; 
+
+  const HistoryScreenLocal({
+    super.key, 
+    required this.userId, 
+    required this.user,
+  });
 
   @override
   State<HistoryScreenLocal> createState() => _HistoryScreenLocalState();
@@ -18,7 +24,6 @@ class HistoryScreenLocal extends StatefulWidget {
 
 class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
   final LocalStorageService _localStorageService = LocalStorageService();
-  // Gunakan Future sebagai variabel state
   late Future<List<LocalAttendance>> _attendancesFuture;
   
   int _selectedYear = DateTime.now().year; 
@@ -28,20 +33,15 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
   void initState() {
     super.initState();
     initializeDateFormatting('id_ID', null);
-    // Panggil future pertama kali saat widget dibuat
     _reloadData();
   }
 
-  // --- [PERBAIKAN KRUSIAL DI SINI] ---
-  // Metode ini akan dipanggil setiap kali pengguna kembali ke tab Riwayat,
-  // memaksa data untuk dimuat ulang.
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _reloadData();
   }
 
-  // Fungsi helper untuk memuat ulang data agar tidak duplikat kode
   void _reloadData() {
     if (mounted) {
       setState(() {
@@ -49,7 +49,6 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
       });
     }
   }
-  // --- AKHIR PERBAIKAN ---
 
   Widget _buildYearFilter(List<LocalAttendance> allAttendances) {
     _availableYears = allAttendances
@@ -131,16 +130,11 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
 
           final allAttendances = snapshot.data!;
           final yearlyAttendances = allAttendances.where((att) => att.timestamp.year == _selectedYear).toList();
-          
           final groupedByMonth = groupBy(
             yearlyAttendances,
             (LocalAttendance att) => DateFormat('MMMM', 'id_ID').format(att.timestamp),
           );
-          
-          final monthOrder = [
-            'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
-            'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-          ];
+          final monthOrder = [ 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember' ];
           final monthKeys = groupedByMonth.keys.toList()
             ..sort((a, b) => monthOrder.indexOf(a).compareTo(monthOrder.indexOf(b)));
           
@@ -157,7 +151,10 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
                     itemBuilder: (context, index) {
                       final monthName = monthKeys[index];
                       final monthlyAttendances = groupedByMonth[monthName]!;
-                      final uniqueCheckInDays = monthlyAttendances.where((att) => att.type == 'check_in').map((att) => DateFormat('yyyy-MM-dd').format(att.timestamp)).toSet().length;
+                      final uniqueCheckInDays = monthlyAttendances
+                          .where((att) => att.type == 'check_in')
+                          .map((att) => DateFormat('yyyy-MM-dd').format(att.timestamp))
+                          .toSet().length;
                       const sakitCount = 0;
                       const cutiCount = 0;
                       const dinasLuarCount = 0;
@@ -177,6 +174,7 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
                                 builder: (context) => MonthlyDetailScreen(
                                   monthName: "$monthName $_selectedYear",
                                   attendances: monthlyAttendances,
+                                  user: widget.user, // Kirim objek user
                                 ),
                               ),
                             );

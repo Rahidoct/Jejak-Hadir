@@ -43,6 +43,7 @@ class AuthServiceLocal {
       final newUser = LocalUser(
         uid: email, email: email, name: name,
         nip: '199110032023211001', position: 'DOKTER AHLI PERTAMA', grade: 'X',
+        registrationDate: DateTime.now(),
       );
       await _localStorageService.saveRegisteredUser(newUser);
       
@@ -66,7 +67,7 @@ class AuthServiceLocal {
           // ignore: use_build_context_synchronously
           context,
           title: "Penyebabnya Disini",
-          message: "Login gagal disebabkan email yang kamu ketik tidak terdaftar",
+          message: "Login gagal disebabkan email yang kamu ketik salah / tidak terdaftar",
           type: NotificationType.info,
         );
         return null;
@@ -151,7 +152,7 @@ class AuthServiceLocal {
         // ignore: use_build_context_synchronously
         context,
         title: "Logout Berhasil",
-        message: "Kamu telah berhasil keluar, Jangan lupa login lagi yah..",
+        message: "Jangan lupa login lagi yah..",
         type: NotificationType.info,
       );
     } catch (e) {

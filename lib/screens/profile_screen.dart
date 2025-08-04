@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import '../models/user_local.dart';
-import '../services/auth_service_local.dart';
-import '../helpers/notification_helper.dart';
+import 'package:jejak_hadir_app/models/user_local.dart';
+import 'package:jejak_hadir_app/services/auth_service_local.dart';
+import 'package:jejak_hadir_app/helpers/notification_helper.dart';
 
-// Halaman untuk melihat detail profil (tidak berubah)
+// --- Halaman-Halaman Placeholder (diletakkan di file yang sama untuk kemudahan) ---
+
+// Halaman untuk melihat detail profil (tidak ada perubahan)
 class ViewProfileDetailScreen extends StatelessWidget {
   final LocalUser user;
   const ViewProfileDetailScreen({super.key, required this.user});
@@ -31,6 +33,74 @@ class ViewProfileDetailScreen extends StatelessWidget {
   }
 }
 
+// [BARU] Halaman kerangka untuk Perekaman Wajah
+class FaceEnrollmentScreen extends StatelessWidget {
+  const FaceEnrollmentScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Perekaman Wajah'),
+        foregroundColor: Colors.white,
+        backgroundColor: Colors.blue,
+      ),
+      body: const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.camera_front, size: 80, color: Colors.grey),
+              SizedBox(height: 16),
+              Text(
+                'Fitur perekaman wajah sedang dalam tahap pengembangan.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// [BARU] Halaman kerangka untuk Pengaturan
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Pengaturan'),
+        foregroundColor: Colors.white,
+        backgroundColor: Colors.blue,
+      ),
+      body: const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.settings, size: 80, color: Colors.grey),
+              SizedBox(height: 16),
+              Text(
+                'Halaman pengaturan sedang dalam tahap pengembangan.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+// --- Halaman Profil Utama ---
 class ProfileScreen extends StatefulWidget {
   final LocalUser user;
   const ProfileScreen({super.key, required this.user});
@@ -65,12 +135,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildMenuTile({ required IconData icon, required String title, required VoidCallback onTap, Color? color }) {
-    return ListTile(
-      leading: Icon(icon, color: color ?? Colors.blue),
-      title: Text(title, style: TextStyle(color: color, fontWeight: FontWeight.w500)),
-      trailing: Icon(Icons.chevron_right, color: color ?? Colors.grey.shade400),
-      onTap: onTap,
+  // Helper TIDAK LAGI menggunakan ListTile, tetapi langsung membangun Card
+  Widget _buildMenuCard({
+    required BuildContext context,
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    Color? color,
+  }) {
+    // Tentukan warna default jika tidak ada warna khusus yang diberikan
+    final itemColor = color ?? Colors.blue;
+    
+    return Card(
+      color: Colors.grey.shade50,
+      elevation: 2,
+      margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      child: InkWell( // Menggunakan InkWell agar seluruh card bisa diklik
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(15),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          child: Row(
+            children: [
+              Icon(icon, color: itemColor),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(title, style: TextStyle(color: itemColor, fontWeight: FontWeight.w500, fontSize: 16)),
+              ),
+              Icon(Icons.chevron_right, color: color ?? Colors.grey.shade400),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -81,6 +178,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: SingleChildScrollView(
         child: Column(
           children: [
+            // --- BAGIAN HEADER PROFIL ---
             Container(
               padding: const EdgeInsets.all(24.0),
               width: double.infinity,
@@ -107,45 +205,53 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ],
               ),
             ),
+            
             const SizedBox(height: 24),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                child: Column(
-                  children: [
-                    _buildMenuTile(
-                      icon: Icons.person_outline_rounded,
-                      title: 'Lihat Profil',
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => ViewProfileDetailScreen(user: widget.user)),
-                        );
-                      },
-                    ),
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    _buildMenuTile(
-                      icon: Icons.lock_outline_rounded,
-                      title: 'Ubah Password',
-                      onTap: () {
-                        _showChangePasswordModal(context);
-                      },
-                    ),
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    _buildMenuTile(
-                      icon: Icons.logout_rounded,
-                      title: 'Logout',
-                      color: Colors.red,
-                      onTap: () {
-                        _showLogoutConfirmation(context);
-                      },
-                    ),
-                  ],
-                ),
-              ),
+
+            // --- [PERUBAHAN UTAMA DI SINI] ---
+            // Setiap menu sekarang adalah Card-nya sendiri
+            _buildMenuCard(
+              context: context,
+              icon: Icons.person_outline_rounded,
+              title: 'Lihat Profil',
+              onTap: () {
+                Navigator.push(context, MaterialPageRoute(builder: (context) => ViewProfileDetailScreen(user: widget.user)));
+              },
             ),
+            _buildMenuCard(
+              context: context,
+              icon: Icons.camera_front_outlined,
+              title: 'Perekaman Wajah',
+              onTap: () {
+                Navigator.push(context, MaterialPageRoute(builder: (context) => const FaceEnrollmentScreen()));
+              },
+            ),
+             _buildMenuCard(
+              context: context,
+              icon: Icons.lock_outline_rounded,
+              title: 'Ubah Password',
+              onTap: () {
+                _showChangePasswordModal(context);
+              },
+            ),
+            _buildMenuCard(
+              context: context,
+              icon: Icons.settings_outlined,
+              title: 'Pengaturan',
+              onTap: () {
+                Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsScreen()));
+              },
+            ),
+            _buildMenuCard(
+              context: context,
+              icon: Icons.logout_rounded,
+              title: 'Logout',
+              color: Colors.red,
+              onTap: () {
+                _showLogoutConfirmation(context);
+              },
+            ),
+            const SizedBox(height: 24), // Beri sedikit ruang di bawah
           ],
         ),
       ),

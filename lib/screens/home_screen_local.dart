@@ -4,11 +4,11 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import '../helpers/notification_helper.dart';
 import '../models/attendance_local.dart';
+import '../models/user_local.dart';
 import '../services/local_storage_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:uuid/uuid.dart';
 
-import '../models/user_local.dart';
 import 'history_screen_local.dart';
 import 'schedule_screen.dart';
 import 'profile_screen.dart';
@@ -16,21 +16,21 @@ import 'profile_screen.dart';
 class HomeScreenLocal extends StatefulWidget {
   final LocalUser user;
   const HomeScreenLocal({super.key, required this.user});
-
   @override
   State<HomeScreenLocal> createState() => _HomeScreenLocalState();
 }
 
-class _HomeScreenLocalState extends State<HomeScreenLocal> {
+class _HomeScreenLocalState extends State<HomeScreenLocal> with WidgetsBindingObserver {
   int _currentIndex = 0;
   bool _isProcessing = false;
   bool _hasCheckedInToday = false;
   bool _hasCheckedOutToday = false; 
-  int _monthlyAttendanceCount = 0;
-  
-  final int _leaveCount = 0;
-  final int _dutyCount = 0;
-  final int _alphaCount = 0;
+  int _yearlyAttendanceCount = 0;
+  // ignore: prefer_final_fields
+  int _yearlyLeaveCount = 0;
+  // ignore: prefer_final_fields
+  int _yearlyDutyCount = 0;
+  int _yearlyAlphaCount = 0;
 
   int _historyKey = 0;
   final LocalStorageService _storageService = LocalStorageService();
@@ -39,13 +39,28 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     initializeDateFormatting('id_ID', null);
     _loadInitialData();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      _loadInitialData();
+    }
   }
   
   Future<void> _loadInitialData() async {
     await _loadLastAttendanceStatus();
-    await _calculateMonthlyStats();
+    await _calculateYearlyStats();
   }
 
   Future<void> _loadLastAttendanceStatus() async {
@@ -60,21 +75,52 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
     }
   }
 
-  Future<void> _calculateMonthlyStats() async {
+  // --- [PERBAIKAN LOGIKA ALFA] ---
+  Future<void> _calculateYearlyStats() async {
     final now = DateTime.now();
     final allAttendances = await _storageService.getAttendancesByUserId(widget.user.uid);
-    final monthlyCheckIns = allAttendances.where((att) {
-      return att.type == 'check_in' &&
-             att.timestamp.month == now.month &&
-             att.timestamp.year == now.year;
+    
+    // 1. Hitung Kehadiran Tahunan (tidak berubah)
+    final yearlyCheckIns = allAttendances.where((att) {
+      return att.type == 'check_in' && att.timestamp.year == now.year;
     }).toList();
-    final uniqueDays = <String>{};
-    for (var att in monthlyCheckIns) {
-      uniqueDays.add(DateFormat('yyyy-MM-dd').format(att.timestamp));
+    final uniqueHadirDays = <String>{};
+    for (var att in yearlyCheckIns) {
+      uniqueHadirDays.add(DateFormat('yyyy-MM-dd').format(att.timestamp));
     }
+
+    // 2. Hitung Alfa Tahunan
+    int totalAlfa = 0;
+    final registrationDate = DateUtils.dateOnly(widget.user.registrationDate);
+    final today = DateUtils.dateOnly(DateTime.now());
+    
+    // --- Logika Tanggal Mulai yang Baru ---
+    // Mulai perhitungan dari hari SETELAH registrasi.
+    DateTime startDate = registrationDate.add(const Duration(days: 1));
+    
+    // Pastikan startDate tidak mendahului awal tahun berjalan.
+    if(startDate.isBefore(DateTime(now.year, 1, 1))){
+        startDate = DateTime(now.year, 1, 1);
+    }
+    
+    // Iterasi dari startDate hingga SEBELUM hari ini.
+    DateTime iteratorDay = startDate;
+    while(iteratorDay.isBefore(today)) {
+      final dayString = DateFormat('yyyy-MM-dd').format(iteratorDay);
+      
+      // Hitung Alfa jika BUKAN hari Minggu DAN tidak ada data hadir.
+      if (iteratorDay.weekday != DateTime.sunday && !uniqueHadirDays.contains(dayString)) {
+        // Di masa depan, cek juga cuti/izin/dl di sini
+        totalAlfa++;
+      }
+      
+      iteratorDay = iteratorDay.add(const Duration(days: 1));
+    }
+    
     if (mounted) {
       setState(() {
-        _monthlyAttendanceCount = uniqueDays.length;
+        _yearlyAttendanceCount = uniqueHadirDays.length;
+        _yearlyAlphaCount = totalAlfa;
       });
     }
   }
@@ -112,44 +158,25 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
       setState(() { _historyKey++; });
       await _loadInitialData();
 
-      // Cek jika absen masuk dan di atas jam 08:00
       if (type == 'check_in' && now.hour >= 8) {
-        NotificationHelper.show(
-          // ignore: use_build_context_synchronously
-          context,
-          title: "Astagfirullah!",
-          message: "Jam segini baru datang? Hadeh! Yang bener aja!",
-          type: NotificationType.info,
-        );
-      } 
-      // Untuk semua kondisi lain (absen sebelum 08:00 atau absen pulang)
-      else {
-        NotificationHelper.show(
-          // ignore: use_build_context_synchronously
-          context,
-          title: "Sipph!",
-          message: "Absen ${type == 'check_in' ? 'masuk' : 'pulang'} berhasil tercatat.",
-          type: NotificationType.success,
-        );
-      }
-
-    } catch (e) {
-      NotificationHelper.show(
         // ignore: use_build_context_synchronously
-        context,
-        title: "Terjadi Kesalahan",
-        message: "Gagal mendapatkan lokasi. Pastikan GPS kamu aktif yah.",
-        type: NotificationType.error,
-      );
+        NotificationHelper.show(context, title: "Astagfirullah!", message: "Jam segini baru datang? Hadeh! Yang bener aja!", type: NotificationType.info);
+      } else {
+        // ignore: use_build_context_synchronously
+        NotificationHelper.show(context, title: "Sipph!", message: "Absen ${type == 'check_in' ? 'masuk' : 'pulang'} berhasil tercatat.", type: NotificationType.success);
+      }
+    } catch (e) {
+      // ignore: use_build_context_synchronously
+      NotificationHelper.show(context, title: "Terjadi Kesalahan", message: "Gagal mendapatkan lokasi. Pastikan GPS kamu aktif yah.", type: NotificationType.error);
     } finally {
       if(mounted) setState(() => _isProcessing = false);
     }
   }
 
   bool _isWithinCheckInWindow() {
-    // --- HANYA UNTUK TESTING ---
-    // return true; // Selalu kembalikan true agar tombol selalu muncul
+    // return true; // gunakan ini jika ingin mengaktifkan tombol absensi masuk diluar jam yang ditentukan / debugging
 
+    // tentukan jam absensi masuk
     final now = DateTime.now();
     final startTime = DateTime(now.year, now.month, now.day, 6, 0);
     final endTime = DateTime(now.year, now.month, now.day, 10, 0);
@@ -157,9 +184,9 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
   }
 
   bool _isWithinCheckOutWindow() {
-    // --- HANYA UNTUK TESTING ---
-    // return true; // Selalu kembalikan true agar tombol selalu muncul
+    // return true; // gunakan ini jika ingin mengaktifkan tombol absensi pulang diluar jam yang ditentukan / debugging
 
+    // tentukan jam absensi pulang
     final now = DateTime.now();
     final startTime = DateTime(now.year, now.month, now.day, 14, 30);
     final endTime = DateTime(now.year, now.month, now.day, 17, 0);
@@ -194,11 +221,9 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
 
   @override
   Widget build(BuildContext context) {
-    // --- [PERBAIKAN #3] Bangun daftar screen di dalam build method ---
-    // Ini memastikan bahwa HistoryScreenLocal selalu dibuat dengan Key yang terbaru.
     final List<Widget> screens = [
       _buildDashboardScreen(),
-      HistoryScreenLocal(key: ValueKey(_historyKey), userId: widget.user.uid),
+      HistoryScreenLocal(key: ValueKey(_historyKey), userId: widget.user.uid, user: widget.user),
       ScheduleScreen(user: widget.user),
       ProfileScreen(user: widget.user),
     ];
@@ -212,7 +237,7 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
       ),
       body: IndexedStack(
         index: _currentIndex,
-        children: screens, // Gunakan daftar screen yang baru dibuat
+        children: screens,
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
@@ -270,26 +295,24 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 30,
-                  backgroundColor: Colors.blue.shade100,
-                  child: Text(widget.user.name.isNotEmpty ? widget.user.name[0].toUpperCase() : '?', style: TextStyle(fontSize: 28, color: Colors.blue.shade800, fontWeight: FontWeight.bold)),
-                ),
-                const SizedBox(width: 16),
-                Expanded(child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(widget.user.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Text('NIP: ${widget.user.nip ?? '-'}', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-                    const SizedBox(height: 4),
-                    Text('PUSKESMAS BUNDER', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-                  ],
-                )),
-              ],
-            ),
+            Row(children: [
+              CircleAvatar(
+                radius: 30,
+                backgroundColor: Colors.blue.shade100,
+                child: Text(widget.user.name.isNotEmpty ? widget.user.name[0].toUpperCase() : '?', style: TextStyle(fontSize: 28, color: Colors.blue.shade800, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 16),
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.user.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Text('NIP: ${widget.user.nip ?? '-'}', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                  const SizedBox(height: 4),
+                  Text('PUSKESMAS BUNDER', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                ],
+              )),
+            ]),
             const SizedBox(height: 8),
             Row(children: [
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -313,10 +336,10 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: [
-        _buildStatItem("Hadir", _monthlyAttendanceCount.toString(), Colors.green.shade700),
-        _buildStatItem("Cuti", _leaveCount.toString(), Colors.orange.shade700),
-        _buildStatItem("Dinas Luar", _dutyCount.toString(), Colors.blue.shade700),
-        _buildStatItem("Alfa", _alphaCount.toString(), Colors.red.shade700),
+        _buildStatItem("Hadir", _yearlyAttendanceCount.toString(), Colors.green.shade700),
+        _buildStatItem("Cuti", _yearlyLeaveCount.toString(), Colors.orange.shade700),
+        _buildStatItem("Dinas Luar", _yearlyDutyCount.toString(), Colors.blue.shade700),        
+        _buildStatItem("Alfa", _yearlyAlphaCount.toString(), Colors.red.shade700),
       ],
     );
   }
@@ -401,6 +424,15 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> {
   Widget _buildAttendanceActionWidget() {
     final now = DateTime.now();
 
+    // KONDISI 0: Cek apakah hari ini adalah hari Minggu.
+    if (now.weekday == DateTime.sunday) {
+      return const _StatusInfo(
+        message: 'Hari ini libur. Waktunya istirahat!',
+        icon: Icons.weekend_outlined,
+        color: Colors.blueGrey,
+      );
+    }
+    // Jika bukan hari Minggu, lanjutkan ke logika absensi biasa.
     if (_hasCheckedInToday && _hasCheckedOutToday) {
       return const _StatusInfo(message: 'Absensi sudah selesai hari ini.', icon: Icons.check_circle_outline, color: Colors.green);
     }
