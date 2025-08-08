@@ -1,11 +1,16 @@
+// lib/screens/profile_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:jejak_hadir_app/models/user_local.dart';
 import 'package:jejak_hadir_app/services/auth_service_local.dart';
 import 'package:jejak_hadir_app/helpers/notification_helper.dart';
+import 'package:jejak_hadir_app/services/local_storage_service.dart';
+import 'leave_history_screen.dart';
+import 'face_enrollment_screen.dart';
+import 'face_data_screen.dart';
 
 // --- Halaman-Halaman Placeholder (diletakkan di file yang sama untuk kemudahan) ---
 
-// Halaman untuk melihat detail profil (tidak ada perubahan)
 class ViewProfileDetailScreen extends StatelessWidget {
   final LocalUser user;
   const ViewProfileDetailScreen({super.key, required this.user});
@@ -33,40 +38,6 @@ class ViewProfileDetailScreen extends StatelessWidget {
   }
 }
 
-// [BARU] Halaman kerangka untuk Perekaman Wajah
-class FaceEnrollmentScreen extends StatelessWidget {
-  const FaceEnrollmentScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Perekaman Wajah'),
-        foregroundColor: Colors.white,
-        backgroundColor: Colors.blue,
-      ),
-      body: const Center(
-        child: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.camera_front, size: 80, color: Colors.grey),
-              SizedBox(height: 16),
-              Text(
-                'Fitur perekaman wajah sedang dalam tahap pengembangan.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 18, color: Colors.grey),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// [BARU] Halaman kerangka untuk Pengaturan
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
@@ -103,12 +74,83 @@ class SettingsScreen extends StatelessWidget {
 // --- Halaman Profil Utama ---
 class ProfileScreen extends StatefulWidget {
   final LocalUser user;
-  const ProfileScreen({super.key, required this.user});
+  final VoidCallback onDataChanged; 
+  const ProfileScreen({super.key, required this.user, required this.onDataChanged});
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  late LocalUser _currentUser;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentUser = widget.user;
+  }
+  
+  Future<void> _navigateToFaceEnrollment() async {
+    final result = await Navigator.push(
+      context, 
+      MaterialPageRoute(builder: (context) => FaceEnrollmentScreen(userId: _currentUser.uid))
+    );
+    if (result == true && mounted) {
+      await _refreshUserData();
+      NotificationHelper.show(
+        // ignore: use_build_context_synchronously
+        context, 
+        title: "Perekaman Berhasil", 
+        message: "Data wajah Anda telah berhasil disimpan.", 
+        type: NotificationType.success,
+      );
+    }
+  }
+
+  // --- [PERBAIKAN UTAMA DI SINI] ---
+  Future<void> _navigateToFaceDataManagement() async {
+    final result = await Navigator.push(
+      context, 
+      MaterialPageRoute(builder: (context) => FaceDataScreen(
+        user: _currentUser,
+        onDataChanged: _refreshUserData,
+      ))
+    );
+
+    if (!mounted) return;
+
+    if (result == 'deleted') {
+      // Refresh UI dan tampilkan notifikasi Hapus
+      await _refreshUserData();
+      NotificationHelper.show(
+        // ignore: use_build_context_synchronously
+        context, 
+        title: "Berhasil", 
+        message: "Data wajah Anda telah dihapus.", 
+        type: NotificationType.success
+      );
+    } else if (result == 'updated') {
+      // Refresh UI dan tampilkan notifikasi Ubah
+      await _refreshUserData();
+      NotificationHelper.show(
+        // ignore: use_build_context_synchronously
+        context, 
+        title: "Perubahan Berhasil", 
+        message: "Data wajah Anda telah berhasil diperbarui.", 
+        type: NotificationType.success,
+      );
+    }
+  }
+
+  Future<void> _refreshUserData() async {
+    final updatedUser = await LocalStorageService().getCurrentUser();
+    if (updatedUser != null && mounted) {
+      setState(() {
+        _currentUser = updatedUser;
+      });
+      widget.onDataChanged();
+    }
+  }
+
   void _showLogoutConfirmation(BuildContext context) {
     NotificationHelper.show(
       context,
@@ -135,7 +177,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // Helper TIDAK LAGI menggunakan ListTile, tetapi langsung membangun Card
   Widget _buildMenuCard({
     required BuildContext context,
     required IconData icon,
@@ -143,15 +184,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required VoidCallback onTap,
     Color? color,
   }) {
-    // Tentukan warna default jika tidak ada warna khusus yang diberikan
     final itemColor = color ?? Colors.blue;
-    
     return Card(
       color: Colors.grey.shade50,
       elevation: 2,
       margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      child: InkWell( // Menggunakan InkWell agar seluruh card bisa diklik
+      child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(15),
         child: Padding(
@@ -173,12 +212,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isFaceEnrolled = _currentUser.faceData != null && _currentUser.faceData!.isNotEmpty;
+
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // --- BAGIAN HEADER PROFIL ---
             Container(
               padding: const EdgeInsets.all(24.0),
               width: double.infinity,
@@ -193,39 +233,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     radius: 52,
                     backgroundColor: Colors.white,
                     child: Text(
-                      widget.user.name.isNotEmpty ? widget.user.name[0].toUpperCase() : '?',
+                      _currentUser.name.isNotEmpty ? _currentUser.name[0].toUpperCase() : '?',
                       style: TextStyle(fontSize: 45, color: Colors.blue, fontWeight: FontWeight.bold),
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Text(widget.user.name, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                  Text(_currentUser.name, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
                   const SizedBox(height: 4),
                   // ignore: deprecated_member_use
-                  Text(widget.user.email, style: TextStyle(fontSize: 16, color: Colors.white.withOpacity(0.8))),
+                  Text(_currentUser.email, style: TextStyle(fontSize: 16, color: Colors.white.withOpacity(0.8))),
                 ],
               ),
             ),
             
             const SizedBox(height: 24),
 
-            // --- [PERUBAHAN UTAMA DI SINI] ---
-            // Setiap menu sekarang adalah Card-nya sendiri
             _buildMenuCard(
               context: context,
               icon: Icons.person_outline_rounded,
               title: 'Lihat Profil',
               onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => ViewProfileDetailScreen(user: widget.user)));
+                Navigator.push(context, MaterialPageRoute(builder: (context) => ViewProfileDetailScreen(user: _currentUser)));
               },
             ),
             _buildMenuCard(
               context: context,
-              icon: Icons.camera_front_outlined,
-              title: 'Perekaman Wajah',
+              icon: Icons.history_edu_outlined,
+              title: 'Riwayat Izin & Sakit',
               onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => const FaceEnrollmentScreen()));
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (context) => LeaveHistoryScreen(userId: _currentUser.uid, onDataChanged: widget.onDataChanged)
+                ));
               },
             ),
+
+            if (isFaceEnrolled)
+              _buildMenuCard(
+                context: context,
+                icon: Icons.face_retouching_natural,
+                title: 'Data Wajah Terekam',
+                color: Colors.green.shade700,
+                onTap: _navigateToFaceDataManagement,
+              )
+            else
+              _buildMenuCard(
+                context: context,
+                icon: Icons.camera_front_outlined,
+                title: 'Perekaman Wajah',
+                onTap: _navigateToFaceEnrollment,
+              ),
+
              _buildMenuCard(
               context: context,
               icon: Icons.lock_outline_rounded,
@@ -251,7 +308,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 _showLogoutConfirmation(context);
               },
             ),
-            const SizedBox(height: 24), // Beri sedikit ruang di bawah
+            const SizedBox(height: 24),
           ],
         ),
       ),
@@ -259,12 +316,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
+// --- Widget ChangePasswordForm ---
 class ChangePasswordForm extends StatefulWidget {
   final String userEmail;
   const ChangePasswordForm({super.key, required this.userEmail});
   @override
-  // ignore: library_private_types_in_public_api
-  _ChangePasswordFormState createState() => _ChangePasswordFormState();
+  State<ChangePasswordForm> createState() => _ChangePasswordFormState();
 }
 
 class _ChangePasswordFormState extends State<ChangePasswordForm> {
@@ -279,7 +336,6 @@ class _ChangePasswordFormState extends State<ChangePasswordForm> {
 
   @override
   void dispose() {
-    // 2. Jangan lupa di-dispose
     _oldPasswordController.dispose();
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
@@ -298,17 +354,9 @@ class _ChangePasswordFormState extends State<ChangePasswordForm> {
       if (mounted) {
         Navigator.of(context).pop();
         if (result) {
-          NotificationHelper.show(context,
-            title: "Yay.. Berhasil",
-            message: "Password kamu telah berhasil diperbarui.",
-            type: NotificationType.success,
-          );
+          NotificationHelper.show(context, title: "Yay.. Berhasil", message: "Password kamu telah berhasil diperbarui.", type: NotificationType.success);
         } else {
-          NotificationHelper.show(context,
-            title: "Aduh..Gagal!",
-            message: "Coba deh cek password lama kamu bener engga.?",
-            type: NotificationType.error,
-          );
+          NotificationHelper.show(context, title: "Aduh..Gagal!", message: "Coba deh cek password lama kamu bener engga.?", type: NotificationType.error);
         }
       }
     }
@@ -329,16 +377,9 @@ class _ChangePasswordFormState extends State<ChangePasswordForm> {
 
   @override
   Widget build(BuildContext context) {
-    // 3. Dibungkus dengan SingleChildScrollView
     return SingleChildScrollView(
       child: Padding(
-        padding: EdgeInsets.only(
-          // Padding ini akan mendorong konten ke atas saat keyboard muncul
-          bottom: MediaQuery.of(context).viewInsets.bottom, 
-          left: 16,
-          right: 16,
-          top: 20,
-        ),
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 16, right: 16, top: 20),
         child: Form(
           key: _formKey,
           child: Column(
@@ -346,47 +387,22 @@ class _ChangePasswordFormState extends State<ChangePasswordForm> {
             children: [
               const Text('Ubah Password', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 24),
-              
-              // 4. Input "Password Lama" ditambahkan kembali ke UI
-              _buildPasswordInputField(
-                controller: _oldPasswordController,
-                label: 'Password Lama',
-                isVisible: _isOldPasswordVisible,
-                onVisibilityToggle: () => setState(() => _isOldPasswordVisible = !_isOldPasswordVisible),
-                validator: (val) => val!.isEmpty ? 'Field ini tidak boleh kosong' : null,
-              ),
+              _buildPasswordInputField(controller: _oldPasswordController, label: 'Password Lama', isVisible: _isOldPasswordVisible, onVisibilityToggle: () => setState(() => _isOldPasswordVisible = !_isOldPasswordVisible), validator: (val) => val!.isEmpty ? 'Field ini tidak boleh kosong' : null),
               const SizedBox(height: 16),
-              
-              _buildPasswordInputField(
-                controller: _newPasswordController,
-                label: 'Password Baru',
-                isVisible: _isNewPasswordVisible,
-                onVisibilityToggle: () => setState(() => _isNewPasswordVisible = !_isNewPasswordVisible),
-                validator: (val) {
-                  if (val == null || val.isEmpty) return 'Field ini tidak boleh kosong';
-                  if (val.length < 6) return 'Password minimal 6 karakter';
-                  return null;
-                },
-              ),
+              _buildPasswordInputField(controller: _newPasswordController, label: 'Password Baru', isVisible: _isNewPasswordVisible, onVisibilityToggle: () => setState(() => _isNewPasswordVisible = !_isNewPasswordVisible), validator: (val) {
+                if (val == null || val.isEmpty) return 'Field ini tidak boleh kosong';
+                if (val.length < 6) return 'Password minimal 6 karakter';
+                return null;
+              }),
               const SizedBox(height: 16),
-              _buildPasswordInputField(
-                controller: _confirmPasswordController,
-                label: 'Konfirmasi Password Baru',
-                isVisible: _isConfirmPasswordVisible,
-                onVisibilityToggle: () => setState(() => _isConfirmPasswordVisible = !_isConfirmPasswordVisible),
-                validator: (val) {
-                  if (val != _newPasswordController.text) return 'Konfirmasi password tidak cocok';
-                  return null;
-                },
-              ),
+              _buildPasswordInputField(controller: _confirmPasswordController, label: 'Konfirmasi Password Baru', isVisible: _isConfirmPasswordVisible, onVisibilityToggle: () => setState(() => _isConfirmPasswordVisible = !_isConfirmPasswordVisible), validator: (val) {
+                if (val != _newPasswordController.text) return 'Konfirmasi password tidak cocok';
+                return null;
+              }),
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: _isLoading ? null : _submitChangePassword,
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 50),
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                ),
+                style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50), backgroundColor: Colors.blue, foregroundColor: Colors.white),
                 child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('SIMPAN'),
               ),
               const SizedBox(height: 20),

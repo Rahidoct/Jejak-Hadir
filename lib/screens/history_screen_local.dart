@@ -1,9 +1,10 @@
+// lib/screens/history_screen_local.dart
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
-import 'package:collection/collection.dart';
-import 'package:jejak_hadir_app/models/user_local.dart'; // Import model user
-
+import 'package:jejak_hadir_app/models/leave_request_local.dart';
+import 'package:jejak_hadir_app/models/user_local.dart';
 import '../models/attendance_local.dart';
 import '../services/local_storage_service.dart';
 import 'monthly_detail_screen.dart';
@@ -24,7 +25,7 @@ class HistoryScreenLocal extends StatefulWidget {
 
 class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
   final LocalStorageService _localStorageService = LocalStorageService();
-  late Future<List<LocalAttendance>> _attendancesFuture;
+  late Future<Map<String, dynamic>> _summaryDataFuture;
   
   int _selectedYear = DateTime.now().year; 
   List<int> _availableYears = [];
@@ -45,9 +46,18 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
   void _reloadData() {
     if (mounted) {
       setState(() {
-        _attendancesFuture = _localStorageService.getAttendancesByUserId(widget.userId);
+        _summaryDataFuture = _loadSummaryData();
       });
     }
+  }
+
+  Future<Map<String, dynamic>> _loadSummaryData() async {
+    final attendances = await _localStorageService.getAttendancesByUserId(widget.userId);
+    final leaveRequests = await _localStorageService.getLeaveRequestsByUserId(widget.userId);
+    return {
+      'attendances': attendances,
+      'leaveRequests': leaveRequests,
+    };
   }
 
   Widget _buildYearFilter(List<LocalAttendance> allAttendances) {
@@ -82,6 +92,7 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
             onChanged: (int? newValue) {
               setState(() {
                 _selectedYear = newValue!;
+                _reloadData();
               });
             },
           ),
@@ -106,8 +117,8 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: FutureBuilder<List<LocalAttendance>>(
-        future: _attendancesFuture,
+      body: FutureBuilder<Map<String, dynamic>>(
+        future: _summaryDataFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -115,51 +126,80 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
           if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));
           }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.calendar_month_rounded, size: 80, color: Colors.grey),
-                  SizedBox(height: 16),
-                  Text('Belum ada riwayat absensi.', style: TextStyle(fontSize: 18, color: Colors.grey)),
-                ],
-              ),
-            );
+          if (!snapshot.hasData) {
+            return const Center(child: Text("Tidak ada data."));
           }
 
-          final allAttendances = snapshot.data!;
-          final yearlyAttendances = allAttendances.where((att) => att.timestamp.year == _selectedYear).toList();
-          final groupedByMonth = groupBy(
-            yearlyAttendances,
-            (LocalAttendance att) => DateFormat('MMMM', 'id_ID').format(att.timestamp),
-          );
+          final allAttendances = snapshot.data!['attendances'] as List<LocalAttendance>;
+          final allLeaveRequests = snapshot.data!['leaveRequests'] as List<LeaveRequest>;
+
           final monthOrder = [ 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember' ];
-          final monthKeys = groupedByMonth.keys.toList()
-            ..sort((a, b) => monthOrder.indexOf(a).compareTo(monthOrder.indexOf(b)));
           
           return Column(
             children: [
               _buildYearFilter(allAttendances),
               const Divider(height: 1, thickness: 1),
               Expanded(
-                child: yearlyAttendances.isEmpty
-                ? Center(child: Text("Tidak ada data untuk tahun $_selectedYear", style: const TextStyle(fontSize: 16, color: Colors.grey)))
-                : ListView.builder(
+                child: ListView.builder(
                     padding: const EdgeInsets.all(12.0),
-                    itemCount: monthKeys.length,
+                    itemCount: 12, 
                     itemBuilder: (context, index) {
-                      final monthName = monthKeys[index];
-                      final monthlyAttendances = groupedByMonth[monthName]!;
-                      final uniqueCheckInDays = monthlyAttendances
+                      final monthNumber = index + 1;
+                      final monthName = monthOrder[index];
+                      
+                      final monthlyAttendances = allAttendances.where((att) => att.timestamp.month == monthNumber && att.timestamp.year == _selectedYear).toList();
+                      final monthlyLeaveRequests = allLeaveRequests.where((req) => (req.startDate.month == monthNumber || req.endDate.month == monthNumber) && req.startDate.year == _selectedYear).toList();
+                      
+                      if (monthlyAttendances.isEmpty && monthlyLeaveRequests.isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+
+                      // --- KALKULASI ---
+                      
+                      final Set<String> hadirDays = monthlyAttendances
                           .where((att) => att.type == 'check_in')
                           .map((att) => DateFormat('yyyy-MM-dd').format(att.timestamp))
-                          .toSet().length;
-                      const sakitCount = 0;
-                      const cutiCount = 0;
-                      const dinasLuarCount = 0;
-                      const tidakHadirCount = 0;
-                      final jumlahHari = uniqueCheckInDays;
+                          .toSet();
+                      
+                      final Set<String> izinSakitDays = {};
+                      final approvedLeaves = monthlyLeaveRequests.where((req) => req.status == 'Disetujui');
+                      for (var leave in approvedLeaves) {
+                          DateTime day = leave.startDate;
+                          while (day.isBefore(leave.endDate.add(const Duration(days: 1)))) {
+                              if (day.month == monthNumber && day.year == _selectedYear) {
+                                  izinSakitDays.add(DateFormat('yyyy-MM-dd').format(day));
+                              }
+                              day = day.add(const Duration(days: 1));
+                          }
+                      }
+                      izinSakitDays.removeAll(hadirDays);
+
+                      int alfaCount = 0;
+                      final daysInMonth = DateTime(_selectedYear, monthNumber + 1, 0).day;
+                      final today = DateUtils.dateOnly(DateTime.now());
+                      final registrationDate = DateUtils.dateOnly(widget.user.registrationDate);
+
+                      for (int i = 1; i <= daysInMonth; i++) {
+                        DateTime currentDay = DateTime(_selectedYear, monthNumber, i);
+                        if (currentDay.isAfter(today) || currentDay.weekday == DateTime.sunday || currentDay.isBefore(registrationDate)) {
+                          continue;
+                        }
+                        String dayString = DateFormat('yyyy-MM-dd').format(currentDay);
+                        if (!hadirDays.contains(dayString) && !izinSakitDays.contains(dayString)) {
+                          alfaCount++;
+                        }
+                      }
+
+                      // --- [PERUBAHAN UTAMA DI SINI] ---
+                      // Definisikan variabel untuk semua statistik
+                      final int hadirCount = hadirDays.length;
+                      final int izinCount = izinSakitDays.length;
+                      final int tidakHadirCount = alfaCount;
+                      const int cutiCount = 0; // Placeholder
+                      const int dinasLuarCount = 0; // Placeholder
+                      // Jumlah hari adalah total dari semua status
+                      final int jumlahHari = hadirCount + izinCount + tidakHadirCount + cutiCount + dinasLuarCount;
+
 
                       return Card(
                         color: Colors.white,
@@ -173,8 +213,8 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
                               MaterialPageRoute(
                                 builder: (context) => MonthlyDetailScreen(
                                   monthName: "$monthName $_selectedYear",
-                                  attendances: monthlyAttendances,
-                                  user: widget.user, // Kirim objek user
+                                  attendances: monthlyAttendances, 
+                                  user: widget.user,
                                 ),
                               ),
                             );
@@ -188,22 +228,21 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Text(
-                                      monthName,
-                                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
-                                    ),
+                                    Text(monthName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87)),
                                     const Icon(Icons.chevron_right, color: Colors.grey),
                                   ],
                                 ),
                                 const Divider(height: 20),
+                                // Baris statistik pertama dikembalikan
                                 Row(
                                   children: [
-                                    _buildStatItem("Hadir", uniqueCheckInDays.toString()),
-                                    _buildStatItem("Izin / Sakit", sakitCount.toString()),
+                                    _buildStatItem("Hadir", hadirCount.toString()),
+                                    _buildStatItem("Izin / Sakit", izinCount.toString()),
                                     _buildStatItem("Cuti", cutiCount.toString()),
                                   ],
                                 ),
                                 const SizedBox(height: 12),
+                                // Baris statistik kedua dikembalikan
                                 Row(
                                   children: [
                                     _buildStatItem("Tidak Hadir", tidakHadirCount.toString()),
