@@ -1,12 +1,15 @@
 // lib/screens/monthly_detail_screen.dart
 
+import 'dart:io';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:open_file/open_file.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:collection/collection.dart';
-import 'package:jejak_hadir_app/models/leave_request_local.dart';
-import 'package:jejak_hadir_app/services/local_storage_service.dart';
 import '../models/attendance_local.dart';
 import '../models/user_local.dart';
+import '../models/leave_request_local.dart';
+import '../services/local_storage_service.dart';
 
 class MonthlyDetailScreen extends StatefulWidget {
   final String monthName;
@@ -56,24 +59,27 @@ class _MonthlyDetailScreenState extends State<MonthlyDetailScreen> {
     );
   }
 
-  // [PERUBAHAN 1] Perbarui _buildDayTile untuk menangani detail izin
   Widget _buildDayTile({
     required int dayIndex,
     required DateTime date,
     required String status,
     required Color color,
     List<LocalAttendance>? dailyAttendances,
-    LeaveRequest? leaveRequest, // Tambahkan parameter untuk data izin
+    LeaveRequest? leaveRequest,
   }) {
     String kehadiranValue = status;
     String jamMasuk = "-";
     String jamPulang = "-";
     String lokasi = "-";
+    String leaveType = "-";
+    String leaveReason = "-";
+    String leaveStatus = "-";
 
     bool isHadir = status == "Hadir";
     bool isAlpa = status == "Alpa / Tidak Hadir";
-    bool isOnLeave = status == "Izin / Sakit";
-    
+    bool isOnLeave = status == "Izin / Sakit" || status == "Cuti" || status == "Dinas Luar";
+
+    // ignore: unused_local_variable
     Color textColor = Colors.black87;
     if (isAlpa) textColor = Colors.red;
     if (isHadir) textColor = Colors.blue;
@@ -87,28 +93,87 @@ class _MonthlyDetailScreenState extends State<MonthlyDetailScreen> {
       lokasi = checkInRecord != null ? '${checkInRecord.latitude.toStringAsFixed(4)}, ${checkInRecord.longitude.toStringAsFixed(4)}' : '-';
     }
 
+    if (leaveRequest != null) {
+      leaveType = leaveRequest.requestType;
+      leaveReason = leaveRequest.reason;
+      leaveStatus = leaveRequest.status;
+      kehadiranValue = leaveRequest.requestType; 
+    }
+
     return ExpansionTile(
       leading: Text((dayIndex + 1).toString(), style: TextStyle(fontSize: 16, color: textColor)),
       title: Text(DateFormat('EEEE, d MMMM yyyy', 'id_ID').format(date), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: textColor)),
-      iconColor: color,
-      collapsedIconColor: color,
+      iconColor: textColor,
+      collapsedIconColor: textColor,
       childrenPadding: const EdgeInsets.fromLTRB(24, 0, 16, 16),
       children: [
-        _buildDetailRow("Status", kehadiranValue),
-        // Tampilkan detail kehadiran jika statusnya "Hadir"
+        // Only show status row if NOT a leave day
+        if (!isOnLeave) _buildDetailRow("Status", kehadiranValue),
+        
+        // Attendance details
         if(isHadir) ...[
           _buildDetailRow("Jam Masuk", jamMasuk),
           _buildDetailRow("Jam Pulang", jamPulang),
           _buildDetailRow("Lokasi", lokasi),
         ],
-        // Tampilkan detail izin jika statusnya "Izin / Sakit"
+        
+        // Leave details
         if(isOnLeave && leaveRequest != null) ...[
-          _buildDetailRow("Alasan", leaveRequest.reason),
-          if (leaveRequest.attachmentPath != null)
-             _buildDetailRow("Keterangan", leaveRequest.status),
+          _buildDetailRow("Status", leaveStatus),
+          _buildDetailRow("Alasan", leaveReason),
+          _buildDetailRow("Keterangan", leaveType),
+          if (leaveRequest.attachmentPath != null && leaveRequest.attachmentPath!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4.0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(width: 110, child: Text("Lampiran", style: TextStyle(fontSize: 15, color: Colors.grey.shade700))),
+                  const Text(":  ", style: TextStyle(fontSize: 15)),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => _openAttachment(leaveRequest.attachmentPath!),
+                      child: Text(
+                        "Lihat File",
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.blue,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ]
       ],
     );
+  }
+
+  Future<void> _openAttachment(String filePath) async {
+    try {
+      if (await File(filePath).exists()) {
+        if (Platform.isAndroid || Platform.isIOS) {
+          await OpenFile.open(filePath);
+        } else {
+          final uri = Uri.file(filePath);
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri);
+          }
+        }
+      } else {
+        // ignore: use_build_context_synchronously
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('File lampiran tidak ditemukan')),
+        );
+      }
+    } catch (e) {
+      // ignore: use_build_context_synchronously
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal membuka lampiran: ${e.toString()}')),
+      );
+    }
   }
 
   @override
@@ -147,8 +212,29 @@ class _MonthlyDetailScreenState extends State<MonthlyDetailScreen> {
               final DateTime currentDay = DateTime(firstDayOfMonth.year, firstDayOfMonth.month, index + 1);
               final int weekday = currentDay.weekday;
 
-              if (currentDay.isAfter(today) || currentDay.isBefore(registrationDate)) {
+              // pengecekan hari
+              if (currentDay.isBefore(registrationDate)) {
+                // Tetap sembunyikan tanggal sebelum registrasi
                 return const SizedBox.shrink();
+              }
+
+              // Cek apakah hari ini adalah hari esok
+              final isFutureDay = currentDay.isAfter(today);
+
+              // Jika hari esok dan BUKAN cuti/izin/dinas luar yang disetujui, jangan tampilkan
+              if (isFutureDay) {
+                final hasApprovedLeave = approvedLeaves.any((leave) => 
+                  !currentDay.isBefore(leave.startDate) && 
+                  !currentDay.isAfter(leave.endDate) &&
+                  leave.status == 'Disetujui' &&
+                  (leave.requestType == 'Cuti' || 
+                  leave.requestType == 'Izin / Sakit' || 
+                  leave.requestType == 'Dinas Luar')
+                );
+                
+                if (!hasApprovedLeave) {
+                  return const SizedBox.shrink();
+                }
               }
               
               // Prioritas 1: Hari libur (Minggu) -> Menggunakan ListTile statis
@@ -160,35 +246,63 @@ class _MonthlyDetailScreenState extends State<MonthlyDetailScreen> {
                 );
               }
 
-              // Prioritas 2: Ada catatan kehadiran (Check-in)
+              // Cek kehadiran
               final dailyAttendances = allAttendances.where((att) => DateUtils.isSameDay(att.timestamp, currentDay)).toList();
               if (dailyAttendances.isNotEmpty) {
-                return _buildDayTile(dayIndex: index, date: currentDay, status: "Hadir", color: Colors.blue, dailyAttendances: dailyAttendances);
+                return _buildDayTile(
+                  dayIndex: index,
+                  date: currentDay,
+                  status: "Hadir",
+                  color: Colors.blue,
+                  dailyAttendances: dailyAttendances,
+                );
               }
               
-              // [PERUBAHAN 2] Ubah logika izin untuk menggunakan _buildDayTile
-              // Cek apakah hari ini tercover oleh izin yang disetujui
+              // Cek izin yang disetujui
               final leaveRecord = approvedLeaves.firstWhereOrNull((leave) => 
-                (currentDay.isAtSameMomentAs(leave.startDate) || currentDay.isAfter(leave.startDate)) &&
-                (currentDay.isAtSameMomentAs(leave.endDate) || currentDay.isBefore(leave.endDate))
+                !currentDay.isBefore(leave.startDate) && 
+                !currentDay.isAfter(leave.endDate)
               );
+              
               if (leaveRecord != null) {
-                 return _buildDayTile(
-                   dayIndex: index, 
-                   date: currentDay, 
-                   status: "Izin / Sakit", 
-                   color: Colors.orange, 
-                   leaveRequest: leaveRecord, // Kirim data izin ke tile
-                 );
+                String statusText = "Izin / Sakit";
+                Color statusColor = Colors.orange;
+                
+                // Sesuaikan teks status berdasarkan jenis izin
+                if (leaveRecord.requestType == 'Cuti') {
+                  statusText = "Cuti";
+                  statusColor = Colors.blueGrey;
+                } else if (leaveRecord.requestType == 'Dinas Luar') {
+                  statusText = "Dinas Luar";
+                  statusColor = Colors.blue;
+                }
+                
+                return _buildDayTile(
+                  dayIndex: index,
+                  date: currentDay,
+                  status: statusText,
+                  color: statusColor,
+                  leaveRequest: leaveRecord,
+                );
               }
 
-              // Prioritas 4: Hari ini, tetapi belum ada data absen
+              // Hari ini belum absen
               if (DateUtils.isSameDay(currentDay, today)) {
-                return _buildDayTile(dayIndex: index, date: currentDay, status: "Belum Absen", color: Colors.grey, dailyAttendances: null);
+                return _buildDayTile(
+                  dayIndex: index,
+                  date: currentDay,
+                  status: "Belum Absen",
+                  color: Colors.grey,
+                );
               }
 
-              // Prioritas 5 (Default): Hari kerja di masa lalu & tidak ada data = Alpa
-              return _buildDayTile(dayIndex: index, date: currentDay, status: "Alpa / Tidak Hadir", color: Colors.red, dailyAttendances: null);
+              // Alpa/Tidak Hadir
+              return _buildDayTile(
+                dayIndex: index,
+                date: currentDay,
+                status: "Alpa / Tidak Hadir",
+                color: Colors.red,
+              );
             },
           );
         },

@@ -1,5 +1,3 @@
-// lib/screens/leave_request_screen.dart
-
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -9,15 +7,15 @@ import 'package:jejak_hadir_app/models/user_local.dart';
 import 'package:jejak_hadir_app/services/local_storage_service.dart';
 import 'package:uuid/uuid.dart';
 
-class LeaveRequestModal extends StatefulWidget {
+class DutyLeaveModal extends StatefulWidget {
   final LocalUser user;
-  const LeaveRequestModal({super.key, required this.user});
+  const DutyLeaveModal({super.key, required this.user});
 
   @override
-  State<LeaveRequestModal> createState() => _LeaveRequestModalState();
+  State<DutyLeaveModal> createState() => _DutyLeaveModalState();
 }
 
-class _LeaveRequestModalState extends State<LeaveRequestModal> {
+class _DutyLeaveModalState extends State<DutyLeaveModal> {
   final _formKey = GlobalKey<FormState>();
   final _reasonController = TextEditingController();
   DateTime? _startDate;
@@ -55,7 +53,6 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
     }
   }
 
-  // --- [PERBAIKAN UTAMA DI SINI] ---
   void _submitRequest() async {
     if (_formKey.currentState!.validate()) {
       if (_startDate == null || _endDate == null) {
@@ -67,8 +64,7 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
       final newRequest = LeaveRequest(
         id: const Uuid().v4(),
         userId: widget.user.uid,
-        // [FIX] Tambahkan parameter 'requestType' yang sekarang wajib ada
-        requestType: 'Izin', 
+        requestType: 'Dinas Luar',
         startDate: _startDate!,
         endDate: _endDate!,
         reason: _reasonController.text,
@@ -105,7 +101,7 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Form Pengajuan Izin/Sakit', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const Text('Form Pengajuan Dinas Luar', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 24),
               
               Row(
@@ -121,18 +117,18 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
                 controller: _reasonController,
                 maxLines: 3,
                 decoration: InputDecoration(
-                  labelText: 'Alasan', 
-                  hintText: 'Contoh: Sakit demam', 
+                  labelText: 'Keterangan/Tujuan', 
+                  hintText: 'Contoh: Kunjungan ke Dinas Kesehatan...', 
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(8))
                 ),
-                validator: (val) => val!.isEmpty ? 'Alasan tidak boleh kosong' : null,
+                validator: (val) => val!.isEmpty ? 'Keterangan tidak boleh kosong' : null,
               ),
               const SizedBox(height: 16),
 
               OutlinedButton.icon(
                 onPressed: _pickFile,
                 icon: const Icon(Icons.upload_file),
-                label: Text(_pickedFile == null ? 'Unggah Bukti (Opsional)' : 'Ganti Bukti'),
+                label: Text(_pickedFile == null ? 'Unggah Surat Tugas (Opsional)' : 'Ganti Surat Tugas'),
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 45),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -151,7 +147,7 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
                   onPressed: _isLoading ? null : _submitRequest,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16)),
-                  child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('AJUKAN SEKARANG'),
+                  child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('AJUKAN DINAS LUAR'),
                 ),
               ),
               const SizedBox(height: 20),

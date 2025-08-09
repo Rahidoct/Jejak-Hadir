@@ -1,5 +1,3 @@
-// lib/screens/leave_request_screen.dart
-
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -9,21 +7,35 @@ import 'package:jejak_hadir_app/models/user_local.dart';
 import 'package:jejak_hadir_app/services/local_storage_service.dart';
 import 'package:uuid/uuid.dart';
 
-class LeaveRequestModal extends StatefulWidget {
+class AnnualLeaveModal extends StatefulWidget {
   final LocalUser user;
-  const LeaveRequestModal({super.key, required this.user});
+  const AnnualLeaveModal({super.key, required this.user});
 
   @override
-  State<LeaveRequestModal> createState() => _LeaveRequestModalState();
+  State<AnnualLeaveModal> createState() => _AnnualLeaveModalState();
 }
 
-class _LeaveRequestModalState extends State<LeaveRequestModal> {
+class _AnnualLeaveModalState extends State<AnnualLeaveModal> {
   final _formKey = GlobalKey<FormState>();
   final _reasonController = TextEditingController();
   DateTime? _startDate;
   DateTime? _endDate;
   File? _pickedFile;
   bool _isLoading = false;
+  String? _selectedLeaveCategory;
+
+  final List<String> _leaveCategories = [
+    'Cuti Ibadah Haji / Umroh',
+    'Cuti Bela Negara',
+    'Cuti Melanjutkan Pendidikan',
+    'Cuti Menikah',
+    'Cuti Menikahkan Anak',
+    'Cuti Khitanan Anak',
+    'Cuti Anggota Keluarga Meninggal',
+    'Cuti Melahirkan',
+    'Cuti Keguguran',
+    'Cuti Haid',
+  ];
 
   Future<void> _selectDate(BuildContext context, bool isStartDate) async {
     final DateTime? picked = await showDatePicker(
@@ -55,10 +67,9 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
     }
   }
 
-  // --- [PERBAIKAN UTAMA DI SINI] ---
   void _submitRequest() async {
     if (_formKey.currentState!.validate()) {
-      if (_startDate == null || _endDate == null) {
+      if (_startDate == null || _endDate == null || _selectedLeaveCategory == null) {
         return;
       }
       
@@ -67,8 +78,8 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
       final newRequest = LeaveRequest(
         id: const Uuid().v4(),
         userId: widget.user.uid,
-        // [FIX] Tambahkan parameter 'requestType' yang sekarang wajib ada
-        requestType: 'Izin', 
+        requestType: 'Cuti',
+        leaveCategory: _selectedLeaveCategory,
         startDate: _startDate!,
         endDate: _endDate!,
         reason: _reasonController.text,
@@ -105,8 +116,29 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Form Pengajuan Izin/Sakit', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const Text('Form Pengajuan Cuti', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 24),
+              
+              DropdownButtonFormField<String>(
+                decoration: InputDecoration(
+                  labelText: 'Jenis Cuti',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                value: _selectedLeaveCategory,
+                items: _leaveCategories.map((String category) {
+                  return DropdownMenuItem<String>(
+                    value: category,
+                    child: Text(category),
+                  );
+                }).toList(),
+                onChanged: (newValue) {
+                  setState(() {
+                    _selectedLeaveCategory = newValue;
+                  });
+                },
+                validator: (value) => value == null ? 'Jenis cuti harus dipilih' : null,
+              ),
+              const SizedBox(height: 16),
               
               Row(
                 children: [
@@ -122,7 +154,7 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
                 maxLines: 3,
                 decoration: InputDecoration(
                   labelText: 'Alasan', 
-                  hintText: 'Contoh: Sakit demam', 
+                  hintText: 'Tuliskan alasan pengajuan cuti...', 
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(8))
                 ),
                 validator: (val) => val!.isEmpty ? 'Alasan tidak boleh kosong' : null,
@@ -151,7 +183,7 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
                   onPressed: _isLoading ? null : _submitRequest,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16)),
-                  child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('AJUKAN SEKARANG'),
+                  child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('AJUKAN CUTI'),
                 ),
               ),
               const SizedBox(height: 20),

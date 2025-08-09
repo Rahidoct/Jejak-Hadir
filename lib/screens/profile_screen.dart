@@ -259,10 +259,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _buildMenuCard(
               context: context,
               icon: Icons.history_edu_outlined,
-              title: 'Riwayat Izin & Sakit',
+              title: 'Riwayat Cuti/Izin/Dinas Luar',
               onTap: () {
                 Navigator.push(context, MaterialPageRoute(
-                  builder: (context) => LeaveHistoryScreen(userId: _currentUser.uid, onDataChanged: widget.onDataChanged)
+                  builder: (context) => LeaveHistoryScreen(
+                    userId: _currentUser.uid, onDataChanged: widget.onDataChanged)
                 ));
               },
             ),

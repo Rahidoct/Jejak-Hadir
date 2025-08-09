@@ -154,25 +154,40 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
                         return const SizedBox.shrink();
                       }
 
-                      // --- KALKULASI ---
+                      // --- [PERBAIKAN KUNCI] Logika Kalkulasi Akurat per Bulan ---
                       
                       final Set<String> hadirDays = monthlyAttendances
                           .where((att) => att.type == 'check_in')
                           .map((att) => DateFormat('yyyy-MM-dd').format(att.timestamp))
                           .toSet();
                       
-                      final Set<String> izinSakitDays = {};
                       final approvedLeaves = monthlyLeaveRequests.where((req) => req.status == 'Disetujui');
+
+                      final Set<String> allNonWorkingDays = {};
                       for (var leave in approvedLeaves) {
-                          DateTime day = leave.startDate;
-                          while (day.isBefore(leave.endDate.add(const Duration(days: 1)))) {
-                              if (day.month == monthNumber && day.year == _selectedYear) {
-                                  izinSakitDays.add(DateFormat('yyyy-MM-dd').format(day));
-                              }
-                              day = day.add(const Duration(days: 1));
+                        for (var day = leave.startDate; day.isBefore(leave.endDate.add(const Duration(days: 1))); day = day.add(const Duration(days: 1))) {
+                          // Hanya tambahkan hari yang berada di bulan dan tahun yang relevan, dan bukan hari Minggu
+                          if (day.month == monthNumber && day.year == _selectedYear && day.weekday != DateTime.sunday) {
+                            allNonWorkingDays.add(DateFormat('yyyy-MM-dd').format(day));
                           }
+                        }
                       }
-                      izinSakitDays.removeAll(hadirDays);
+                      
+                      // Pisahkan lagi untuk hitungan per kategori
+                      final izinSakitDays = allNonWorkingDays.where((dayStr) {
+                        final day = DateTime.parse(dayStr);
+                        return approvedLeaves.any((l) => l.requestType == 'Izin' && !day.isBefore(l.startDate) && !day.isAfter(l.endDate));
+                      }).toSet();
+
+                      final cutiDays = allNonWorkingDays.where((dayStr) {
+                        final day = DateTime.parse(dayStr);
+                        return approvedLeaves.any((l) => l.requestType == 'Cuti' && !day.isBefore(l.startDate) && !day.isAfter(l.endDate));
+                      }).toSet();
+
+                      final dinasLuarDays = allNonWorkingDays.where((dayStr) {
+                        final day = DateTime.parse(dayStr);
+                        return approvedLeaves.any((l) => l.requestType == 'Dinas Luar' && !day.isBefore(l.startDate) && !day.isAfter(l.endDate));
+                      }).toSet();
 
                       int alfaCount = 0;
                       final daysInMonth = DateTime(_selectedYear, monthNumber + 1, 0).day;
@@ -181,25 +196,27 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
 
                       for (int i = 1; i <= daysInMonth; i++) {
                         DateTime currentDay = DateTime(_selectedYear, monthNumber, i);
-                        if (currentDay.isAfter(today) || currentDay.weekday == DateTime.sunday || currentDay.isBefore(registrationDate)) {
+                        if (currentDay.isAfter(today) || currentDay.isBefore(registrationDate)) {
                           continue;
                         }
-                        String dayString = DateFormat('yyyy-MM-dd').format(currentDay);
-                        if (!hadirDays.contains(dayString) && !izinSakitDays.contains(dayString)) {
-                          alfaCount++;
+                        
+                        if (currentDay.weekday != DateTime.sunday) {
+                          String dayString = DateFormat('yyyy-MM-dd').format(currentDay);
+                          if (!hadirDays.contains(dayString) && !allNonWorkingDays.contains(dayString)) {
+                            alfaCount++;
+                          }
                         }
                       }
 
-                      // --- [PERUBAHAN UTAMA DI SINI] ---
-                      // Definisikan variabel untuk semua statistik
                       final int hadirCount = hadirDays.length;
                       final int izinCount = izinSakitDays.length;
+                      final int cutiCount = cutiDays.length;
+                      final int dinasLuarCount = dinasLuarDays.length;
                       final int tidakHadirCount = alfaCount;
-                      const int cutiCount = 0; // Placeholder
-                      const int dinasLuarCount = 0; // Placeholder
-                      // Jumlah hari adalah total dari semua status
-                      final int jumlahHari = hadirCount + izinCount + tidakHadirCount + cutiCount + dinasLuarCount;
-
+                      final int jumlahHari = hadirCount + izinCount + cutiCount + dinasLuarCount + tidakHadirCount;
+                      
+                      // Jangan tampilkan card jika tidak ada aktivitas sama sekali
+                      if (jumlahHari == 0) return const SizedBox.shrink();
 
                       return Card(
                         color: Colors.white,
@@ -233,7 +250,6 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
                                   ],
                                 ),
                                 const Divider(height: 20),
-                                // Baris statistik pertama dikembalikan
                                 Row(
                                   children: [
                                     _buildStatItem("Hadir", hadirCount.toString()),
@@ -242,7 +258,6 @@ class _HistoryScreenLocalState extends State<HistoryScreenLocal> {
                                   ],
                                 ),
                                 const SizedBox(height: 12),
-                                // Baris statistik kedua dikembalikan
                                 Row(
                                   children: [
                                     _buildStatItem("Tidak Hadir", tidakHadirCount.toString()),

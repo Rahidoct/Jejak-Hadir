@@ -44,6 +44,8 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
     final updatedRequest = LeaveRequest(
       id: request.id, 
       userId: request.userId, 
+      requestType: request.requestType, 
+      leaveCategory: request.leaveCategory,
       startDate: request.startDate, 
       endDate: request.endDate, 
       reason: request.reason, 
@@ -78,7 +80,7 @@ class _LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Riwayat Pengajuan Izin'),
+        title: const Text('Detail Riwayat'),
         foregroundColor: Colors.white,
         backgroundColor: Colors.blue,
       ),
