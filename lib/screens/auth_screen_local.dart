@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:jejak_hadir_app/helpers/notification_helper.dart';
 import 'package:jejak_hadir_app/services/auth_service_local.dart';
 
 class AuthScreenLocal extends StatefulWidget {
@@ -14,8 +13,6 @@ class _AuthScreenLocalState extends State<AuthScreenLocal> {
   final _formKey = GlobalKey<FormState>();
   String email = '';
   String password = '';
-  String name = '';
-  bool isLogin = true;
   bool _isLoading = false;
   bool _isPasswordVisible = false;
 
@@ -27,45 +24,11 @@ class _AuthScreenLocalState extends State<AuthScreenLocal> {
     if (_formKey.currentState!.validate()) {
       setState(() { _isLoading = true; });
 
-      dynamic result;
-      if (isLogin) {
-        // Proses Login
-        result = await _auth.signInWithEmailAndPassword(email, password, context);
-        if (result == null && mounted) {
-          NotificationHelper.show(
-            context,
-            title: "Yah.. Login Gagal!",
-            message: "Sepertinya email atau password yang kamu ketik salah. Coba lagi yuk.",
-            type: NotificationType.error,
-          );
-        }
-      } else {
-        // Proses Pendaftaran
-        result = await _auth.registerWithEmailAndPassword(email, password, name);
-        if (result == null && mounted) {
-          NotificationHelper.show(
-            context,
-            title: "Pendaftaran Gagal!",
-            message: "Sepertinya email ini sudah terdaftar. Silakan gunakan email lain.",
-            type: NotificationType.error,
-          );
-        } else if (result != null && mounted) {
-          // Pendaftaran berhasil, tampilkan notifikasi sukses
-          NotificationHelper.show(
-            context,
-            title: "Pendaftaran Berhasil!",
-            message: "Mantap! Akun telah berhasil dibuat. Yuk masuk sekarang.",
-            type: NotificationType.success,
-          );
-          // Pindahkan ke halaman login & bersihkan form
-          setState(() {
-            isLogin = true;
-            _formKey.currentState?.reset();
-          });
-        }
-      }
-      
-      // Matikan loading indicator setelah semua proses selesai
+      // Login ke backend. Notifikasi sukses/gagal ditangani di AuthService.
+      // Akun pegawai dibuat oleh admin Kepegawaian di web — tak ada registrasi
+      // mandiri dari aplikasi.
+      await _auth.signInWithEmailAndPassword(email, password, context);
+
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -134,15 +97,14 @@ class _AuthScreenLocalState extends State<AuthScreenLocal> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Container(
-                        width: 70,
-                        height: 70,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.grey.shade200,
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: const Icon(Icons.location_city, size: 40, color: Colors.grey),
+                      Image.asset(
+                        'assets/images/logo_puskesmas.png',
+                        width: 76,
+                        height: 76,
+                        fit: BoxFit.contain,
+                        // Dekode pada resolusi kecil (bukan 1280px asli) — hemat memori/CPU.
+                        cacheWidth: 200,
+                        cacheHeight: 200,
                       ),
                       const SizedBox(width: 16),
                       const Column(
@@ -157,27 +119,18 @@ class _AuthScreenLocalState extends State<AuthScreenLocal> {
                   const SizedBox(height: 40),
 
                   // --- JUDUL FORM ---
-                  Text(
-                    isLogin ? 'Masuk untuk mulai absensi' : 'Daftarkan Akun',
-                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  const Text(
+                    'Masuk untuk mulai absensi',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 24),
-                  
+
                   // --- INPUT FIELDS ---
-                  if (!isLogin) ...[
-                    _buildTextField(
-                      label: 'Nama Lengkap',
-                      icon: Icons.person_outline,
-                      onChanged: (val) => setState(() => name = val),
-                      validator: (val) => val!.isEmpty ? 'Nama tidak boleh kosong' : null,
-                    ),
-                    const SizedBox(height: 16),
-                  ],
                   _buildTextField(
-                    label: 'Email',
-                    icon: Icons.email_outlined,
+                    label: 'Username atau Email',
+                    icon: Icons.person_outline,
                     onChanged: (val) => setState(() => email = val),
-                    validator: (val) => val!.isEmpty ? 'Email tidak boleh kosong' : null,
+                    validator: (val) => val!.isEmpty ? 'Username / email tidak boleh kosong' : null,
                   ),
                   const SizedBox(height: 16),
                   _buildTextField(
@@ -204,34 +157,18 @@ class _AuthScreenLocalState extends State<AuthScreenLocal> {
                     ),
                     child: _isLoading
                         ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white))
-                        : Text(
-                            isLogin ? 'Masuk' : 'Daftar',
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        : const Text(
+                            'Masuk',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                           ),
                   ),
                   const SizedBox(height: 20),
 
-                  // --- TOGGLE LOGIN/DAFTAR ---
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        isLogin ? 'Belum memiliki akun?' : 'Sudah memiliki akun?',
-                        style: TextStyle(color: Colors.grey.shade600),
-                      ),
-                      TextButton(
-                        onPressed: _isLoading ? null : () {
-                          setState(() {
-                            isLogin = !isLogin;
-                            _formKey.currentState?.reset(); // Bersihkan form saat berpindah
-                          });
-                        },
-                        child: Text(
-                          isLogin ? 'Daftar disini' : 'Masuk',
-                          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade700),
-                        ),
-                      ),
-                    ],
+                  // Akun dibuat oleh admin Kepegawaian — tak ada registrasi mandiri.
+                  Text(
+                    'Gunakan akun yang terdaftar di sistem kepegawaian.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
                   ),
                 ],
               ),

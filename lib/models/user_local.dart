@@ -8,7 +8,8 @@ class LocalUser {
   final String? position;
   final String? grade;
   final DateTime registrationDate;
-  final String? faceData; // CHANGED: From bool to String? for image data
+  final String? faceData;
+  final String? profilePicture;
 
   LocalUser({
     required this.uid,
@@ -18,10 +19,10 @@ class LocalUser {
     this.position,
     this.grade,
     required this.registrationDate,
-    this.faceData, // CHANGED
+    this.faceData,
+    this.profilePicture,
   });
 
-  // NEW: copyWith method for easier updates
   LocalUser copyWith({
     String? uid,
     String? email,
@@ -30,8 +31,8 @@ class LocalUser {
     String? position,
     String? grade,
     DateTime? registrationDate,
-    // Use Object to handle null explicitly
-    Object? faceData = const Object(), 
+    String? faceData,
+    String? profilePicture,
   }) {
     return LocalUser(
       uid: uid ?? this.uid,
@@ -41,9 +42,8 @@ class LocalUser {
       position: position ?? this.position,
       grade: grade ?? this.grade,
       registrationDate: registrationDate ?? this.registrationDate,
-      // If faceData is the default Object, keep the old value.
-      // Otherwise, use the new value (which can be a String or null).
-      faceData: faceData == const Object() ? this.faceData : faceData as String?,
+      faceData: faceData, // Jangan hapus '?? this.faceData'
+      profilePicture: profilePicture ?? this.profilePicture,
     );
   }
 
@@ -56,7 +56,8 @@ class LocalUser {
       'position': position,
       'grade': grade,
       'registrationDate': registrationDate.toIso8601String(),
-      'faceData': faceData, // CHANGED
+      'faceData': faceData,
+      'profilePicture': profilePicture,
     };
   }
 
@@ -71,7 +72,8 @@ class LocalUser {
       registrationDate: map['registrationDate'] != null
           ? DateTime.parse(map['registrationDate'] as String)
           : DateTime.now(),
-      faceData: map['faceData'] as String?, // CHANGED
+      faceData: map['faceData'] as String?,
+      profilePicture: map['profilePicture'] as String?,
     );
   }
 }

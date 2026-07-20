@@ -4,4 +4,9 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- HANYA untuk build DEBUG: izinkan HTTP polos agar bisa uji ke backend
+         Laragon lokal (mis. http://10.0.2.2/...). Build rilis TIDAK memakai ini,
+         jadi produksi tetap mewajibkan HTTPS (sekaligus syarat kamera absensi). -->
+    <application android:usesCleartextTraffic="true" />
 </manifest>

@@ -1,19 +1,54 @@
 // lib/screens/profile_screen.dart
 
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:jejak_hadir_app/models/user_local.dart';
 import 'package:jejak_hadir_app/services/auth_service_local.dart';
 import 'package:jejak_hadir_app/helpers/notification_helper.dart';
 import 'package:jejak_hadir_app/services/local_storage_service.dart';
+import 'edit_profile_screen.dart';
 import 'leave_history_screen.dart';
 import 'face_enrollment_screen.dart';
 import 'face_data_screen.dart';
 
-// --- Halaman-Halaman Placeholder (diletakkan di file yang sama untuk kemudahan) ---
-
-class ViewProfileDetailScreen extends StatelessWidget {
+// --- Halaman Detail Profil ---
+class ViewProfileDetailScreen extends StatefulWidget {
   final LocalUser user;
   const ViewProfileDetailScreen({super.key, required this.user});
+
+  @override
+  State<ViewProfileDetailScreen> createState() => _ViewProfileDetailScreenState();
+}
+
+class _ViewProfileDetailScreenState extends State<ViewProfileDetailScreen> {
+  late LocalUser _currentUser;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentUser = widget.user;
+  }
+
+  Future<void> _refreshUserData() async {
+    final updatedUser = await LocalStorageService().getCurrentUser();
+    if (updatedUser != null && mounted) {
+      setState(() {
+        _currentUser = updatedUser;
+      });
+    }
+  }
+
+  Widget _buildInfoCard(IconData icon, String title, String subtitle) {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: ListTile(
+        leading: Icon(icon, color: Colors.blue),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text(subtitle, style: const TextStyle(fontSize: 16)),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -21,16 +56,52 @@ class ViewProfileDetailScreen extends StatelessWidget {
         title: const Text('Detail Profil'),
         foregroundColor: Colors.white,
         backgroundColor: Colors.blue,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: () async {
+              final result = await Navigator.push(
+                context, 
+                MaterialPageRoute(builder: (context) => EditProfileScreen(user: _currentUser))
+              );
+              // Jika ada perubahan dari halaman edit, refresh data
+              if (result == true) {
+                _refreshUserData();
+              }
+            },
+          )
+        ],
       ),
-      body: Padding(
+      backgroundColor: Colors.grey.shade100,
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            ListTile(title: const Text("Nama Lengkap"), subtitle: Text(user.name, style: const TextStyle(fontSize: 16))), const Divider(),
-            ListTile(title: const Text("Email"), subtitle: Text(user.email, style: const TextStyle(fontSize: 16))), const Divider(),
-            ListTile(title: const Text("NIP"), subtitle: Text(user.nip ?? '-', style: const TextStyle(fontSize: 16))), const Divider(),
-            ListTile(title: const Text("Jabatan"), subtitle: Text(user.position ?? '-', style: const TextStyle(fontSize: 16))), const Divider(),
-            ListTile(title: const Text("Golongan"), subtitle: Text(user.grade ?? '-', style: const TextStyle(fontSize: 16))),
+            // Header dengan foto profil
+            Center(
+              child: CircleAvatar(
+                radius: 60,
+                backgroundColor: Colors.blue.shade100,
+                backgroundImage: _currentUser.profilePicture != null 
+                    ? MemoryImage(base64Decode(_currentUser.profilePicture!))
+                    : null,
+                child: _currentUser.profilePicture == null
+                    ? Text(
+                        _currentUser.name.isNotEmpty ? _currentUser.name[0].toUpperCase() : '?',
+                        style: TextStyle(fontSize: 50, color: Colors.blue.shade700)
+                      )
+                    : null,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(_currentUser.name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+            Text(_currentUser.email, style: TextStyle(fontSize: 16, color: Colors.grey.shade600)),
+            const Divider(height: 40),
+            
+            // Info dalam bentuk Card
+            _buildInfoCard(Icons.badge_outlined, "NIP", _currentUser.nip ?? '-'),
+            _buildInfoCard(Icons.work_outline, "Jabatan", _currentUser.position ?? '-'),
+            _buildInfoCard(Icons.star_outline, "Golongan", _currentUser.grade ?? '-'),
           ],
         ),
       ),

@@ -18,28 +18,29 @@ class DutyLeaveModal extends StatefulWidget {
 class _DutyLeaveModalState extends State<DutyLeaveModal> {
   final _formKey = GlobalKey<FormState>();
   final _reasonController = TextEditingController();
-  DateTime? _startDate;
-  DateTime? _endDate;
+  DateTimeRange? _selectedDateRange;
   File? _pickedFile;
   bool _isLoading = false;
 
-  Future<void> _selectDate(BuildContext context, bool isStartDate) async {
-    final DateTime? picked = await showDatePicker(
+  Future<void> _selectDateRange(BuildContext context) async {
+    final DateTimeRange? picked = await showDateRangePicker(
       context: context,
-      initialDate: _startDate ?? DateTime.now(),
       firstDate: DateTime.now().subtract(const Duration(days: 30)),
       lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDateRange: _selectedDateRange,
+      helpText: 'Pilih Rentang Tanggal Dinas',
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.light().copyWith(
+            colorScheme: const ColorScheme.light(primary: Colors.blue),
+          ),
+          child: child!,
+        );
+      },
     );
-    if (picked != null) {
+    if (picked != null && picked != _selectedDateRange) {
       setState(() {
-        if (isStartDate) {
-          _startDate = picked;
-          if (_endDate != null && _endDate!.isBefore(_startDate!)) {
-            _endDate = _startDate;
-          }
-        } else {
-          _endDate = picked;
-        }
+        _selectedDateRange = picked;
       });
     }
   }
@@ -55,7 +56,10 @@ class _DutyLeaveModalState extends State<DutyLeaveModal> {
 
   void _submitRequest() async {
     if (_formKey.currentState!.validate()) {
-      if (_startDate == null || _endDate == null) {
+      if (_selectedDateRange == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Silakan pilih tanggal terlebih dahulu.'))
+        );
         return;
       }
       
@@ -65,8 +69,8 @@ class _DutyLeaveModalState extends State<DutyLeaveModal> {
         id: const Uuid().v4(),
         userId: widget.user.uid,
         requestType: 'Dinas Luar',
-        startDate: _startDate!,
-        endDate: _endDate!,
+        startDate: _selectedDateRange!.start,
+        endDate: _selectedDateRange!.end,
         reason: _reasonController.text,
         status: 'Diajukan',
         submittedDate: DateTime.now(),
@@ -99,28 +103,18 @@ class _DutyLeaveModalState extends State<DutyLeaveModal> {
           key: _formKey,
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('Form Pengajuan Dinas Luar', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const Text('Form Pengajuan Dinas Luar', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
               const SizedBox(height: 24),
               
-              Row(
-                children: [
-                  Expanded(child: _buildDateSelector("Tanggal Mulai", _startDate, true)),
-                  const SizedBox(width: 16),
-                  Expanded(child: _buildDateSelector("Tanggal Selesai", _endDate, false)),
-                ],
-              ),
+              _buildDateRangeSelector(),
               const SizedBox(height: 16),
               
               TextFormField(
                 controller: _reasonController,
                 maxLines: 3,
-                decoration: InputDecoration(
-                  labelText: 'Keterangan/Tujuan', 
-                  hintText: 'Contoh: Kunjungan ke Dinas Kesehatan...', 
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8))
-                ),
+                decoration: _inputDecoration('Keterangan/Tujuan', 'Contoh: Kunjungan ke Dinas Kesehatan...'),
                 validator: (val) => val!.isEmpty ? 'Keterangan tidak boleh kosong' : null,
               ),
               const SizedBox(height: 16),
@@ -129,10 +123,7 @@ class _DutyLeaveModalState extends State<DutyLeaveModal> {
                 onPressed: _pickFile,
                 icon: const Icon(Icons.upload_file),
                 label: Text(_pickedFile == null ? 'Unggah Surat Tugas (Opsional)' : 'Ganti Surat Tugas'),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 45),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
+                style: _outlineButtonStyle(),
               ),
               if (_pickedFile != null) ...[
                 const SizedBox(height: 8),
@@ -141,14 +132,14 @@ class _DutyLeaveModalState extends State<DutyLeaveModal> {
               
               const SizedBox(height: 24),
               
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _submitRequest,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16)),
-                  child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('AJUKAN DINAS LUAR'),
+              ElevatedButton(
+                onPressed: _isLoading ? null : _submitRequest,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue, foregroundColor: Colors.white, 
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
                 ),
+                child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('AJUKAN DINAS LUAR'),
               ),
               const SizedBox(height: 20),
             ],
@@ -158,23 +149,58 @@ class _DutyLeaveModalState extends State<DutyLeaveModal> {
     );
   }
 
-  Widget _buildDateSelector(String label, DateTime? date, bool isStart) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
-        const SizedBox(height: 8),
-        InkWell(
-          onTap: () => _selectDate(context, isStart),
-          child: InputDecorator(
-            decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 15)),
-            child: Text(
-              date == null ? 'Pilih' : DateFormat('dd/MM/yy').format(date),
-              style: const TextStyle(fontSize: 16),
-            ),
-          ),
+  Widget _buildDateRangeSelector() {
+    String displayText;
+    if (_selectedDateRange == null) {
+      displayText = 'Pilih Tanggal';
+    } else {
+      if (DateUtils.isSameDay(_selectedDateRange!.start, _selectedDateRange!.end)) {
+        displayText = DateFormat('d MMMM yyyy', 'id_ID').format(_selectedDateRange!.start);
+      } else {
+        displayText = '${DateFormat('d MMM', 'id_ID').format(_selectedDateRange!.start)} - ${DateFormat('d MMM yyyy', 'id_ID').format(_selectedDateRange!.end)}';
+      }
+    }
+    
+    return InkWell(
+      onTap: () => _selectDateRange(context),
+      child: InputDecorator(
+        decoration: _inputDecoration('').copyWith(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16)
         ),
-      ],
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(displayText, style: const TextStyle(fontSize: 16)),
+            const Icon(Icons.calendar_today, color: Colors.grey),
+          ],
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String label, [String? hint]) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      labelStyle: const TextStyle(color: Colors.blueGrey),
+      floatingLabelStyle: const TextStyle(color: Colors.blue),
+      enabledBorder: OutlineInputBorder(
+        borderSide: BorderSide(color: Colors.blueGrey.shade200),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderSide: BorderSide(color: Colors.blue.shade700, width: 2.0),
+        borderRadius: BorderRadius.circular(12),
+      ),
+    );
+  }
+
+  ButtonStyle _outlineButtonStyle() {
+    return OutlinedButton.styleFrom(
+      minimumSize: const Size(double.infinity, 50),
+      foregroundColor: Colors.blue.shade700,
+      side: BorderSide(color: Colors.blue.shade700),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     );
   }
 }

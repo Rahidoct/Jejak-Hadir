@@ -54,25 +54,30 @@ class LocalStorageService {
     }
   }
 
-  // CHANGED: This function now saves a String? (face data) or null (to delete)
-  Future<void> updateUserFaceData(String userId, String? faceData) async {
+  // [BARU] Fungsi terpusat untuk mengupdate profil pengguna
+  Future<void> updateUserProfile(LocalUser updatedUserData) async {
     final prefs = await _prefs;
     final users = await getRegisteredUsers();
     
-    final userIndex = users.indexWhere((user) => user.uid == userId);
+    final userIndex = users.indexWhere((user) => user.uid == updatedUserData.uid);
     if (userIndex != -1) {
-      // Use copyWith to update the faceData field.
-      // Passing null to faceData will correctly set it to null.
-      final updatedUser = users[userIndex].copyWith(faceData: faceData);
-      users[userIndex] = updatedUser;
+      users[userIndex] = updatedUserData; // Ganti dengan data baru yang lengkap
       
       await prefs.setString(_registeredUsersKey, jsonEncode(users.map((u) => u.toMap()).toList()));
       
       final currentUser = await getCurrentUser();
-      if (currentUser?.uid == userId) {
-        await saveCurrentUser(updatedUser);
+      if (currentUser?.uid == updatedUserData.uid) {
+        await saveCurrentUser(updatedUserData);
       }
     }
+  }
+
+  // Fungsi updateUserFaceData diubah sedikit agar menggunakan updateUserProfile
+  Future<void> updateUserFaceData(String userId, String? faceData) async {
+    final users = await getRegisteredUsers();
+    final userToUpdate = users.firstWhere((user) => user.uid == userId, orElse: () => throw Exception('User not found'));
+    final updatedUser = userToUpdate.copyWith(faceData: faceData);
+    await updateUserProfile(updatedUser);
   }
 
   Future<void> clearCurrentUser() async {

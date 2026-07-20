@@ -16,7 +16,7 @@ import '../models/user_local.dart';
 import '../services/local_storage_service.dart';
 
 // Import screens
-import 'leave_request_screen.dart';
+import 'leave_request_modal.dart';
 import 'annual_leave_modal.dart';
 import 'duty_leave_modal.dart';
 import 'history_screen_local.dart';
@@ -92,13 +92,9 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> with WidgetsBindingOb
     }
   }
 
-  // --- [PERBAIKAN UTAMA DI SINI] ---
-
-  // [BARU] Fungsi helper untuk menghitung hari kerja (Senin - Sabtu)
   int _countWorkingDays(DateTime startDate, DateTime endDate) {
     int workingDays = 0;
     for (var day = startDate; day.isBefore(endDate.add(const Duration(days: 1))); day = day.add(const Duration(days: 1))) {
-      // Hitung jika hari BUKAN Minggu
       if (day.weekday != DateTime.sunday) {
         workingDays++;
       }
@@ -115,30 +111,23 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> with WidgetsBindingOb
     final yearlyAttendances = allAttendances.where((att) => att.timestamp.year == now.year);
     final yearlyLeaveRequests = allLeaveRequests.where((req) => req.startDate.year == now.year);
 
-    final Set<String> hadirDays = yearlyAttendances
-        .where((att) => att.type == 'check_in')
-        .map((att) => DateFormat('yyyy-MM-dd').format(att.timestamp))
-        .toSet();
+    final Set<String> hadirDays = yearlyAttendances.where((att) => att.type == 'check_in').map((att) => DateFormat('yyyy-MM-dd').format(att.timestamp)).toSet();
     
     final approvedLeaves = yearlyLeaveRequests.where((req) => req.status == 'Disetujui');
     
-    // [FIX] Gunakan fungsi helper untuk menghitung hari kerja
     int totalIzinSakitDays = 0;
     approvedLeaves.where((req) => req.requestType == 'Izin').forEach((leave) {
       totalIzinSakitDays += _countWorkingDays(leave.startDate, leave.endDate);
     });
-
     int totalCutiDays = 0;
     approvedLeaves.where((req) => req.requestType == 'Cuti').forEach((leave) {
       totalCutiDays += _countWorkingDays(leave.startDate, leave.endDate);
     });
-
     int totalDinasLuarDays = 0;
     approvedLeaves.where((req) => req.requestType == 'Dinas Luar').forEach((leave) {
       totalDinasLuarDays += _countWorkingDays(leave.startDate, leave.endDate);
     });
 
-    // Kumpulkan semua hari yang tidak masuk kerja (selain alfa) untuk pengecualian
     final Set<String> allNonWorkingDays = {};
     for (var leave in approvedLeaves) {
       for (var day = leave.startDate; day.isBefore(leave.endDate.add(const Duration(days: 1))); day = day.add(const Duration(days: 1))) {
@@ -178,9 +167,14 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> with WidgetsBindingOb
     setState(() => _isProcessing = true);
     var status = await Permission.location.request();
     if (!status.isGranted) {
+      if (!mounted) return;
       setState(() => _isProcessing = false);
-      // ignore: use_build_context_synchronously
-      NotificationHelper.show(context, title: "Akses Ditolak", message: "Izin lokasi diperlukan.", type: NotificationType.error);
+      NotificationHelper.show(
+        context,
+        title: "Akses Ditolak",
+        message: "Izin lokasi diperlukan.",
+        type: NotificationType.error,
+      );
       return;
     }
     try {
@@ -208,22 +202,43 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> with WidgetsBindingOb
         NotificationHelper.show(context, title: "Sipph!", message: "Absen ${type == 'check_in' ? 'masuk' : 'pulang'} berhasil dicatat.", type: NotificationType.success);
       }
     } catch (e) {
-      // ignore: use_build_context_synchronously
-      NotificationHelper.show(context, title: "Terjadi Kesalahan", message: "Gagal mendapatkan lokasi.", type: NotificationType.error);
+      if (!mounted) return;
+      String message;
+      if (e.toString().contains('PERMISSION_DENIED')) {
+        message = 'Izin lokasi ditolak.';
+      } else if (e.toString().contains('Location service disabled')) {
+        message = 'Layanan lokasi (GPS) tidak aktif.';
+      } else {
+        message = 'Gagal mendapatkan lokasi.';
+      }
+      NotificationHelper.show(
+        context,
+        title: "Terjadi Kesalahan",
+        message: message,
+        type: NotificationType.error,
+      );
     } finally {
-      if(mounted) setState(() => _isProcessing = false);
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
   bool _isWithinCheckInWindow() {
-    final now = DateTime.now();
-    return now.hour >= 6 && now.hour < 10;
+    return true; // Selalu kembalikan true agar tombol selalu muncul untuk debugging
+
+    // final now = DateTime.now();
+    // final startTime = DateTime(now.year, now.month, now.day, 6, 0);
+    // final endTime = DateTime(now.year, now.month, now.day, 10, 0);
+    // return now.isAfter(startTime) && now.isBefore(endTime);
   }
 
   bool _isWithinCheckOutWindow() {
-    final now = DateTime.now();
-    return now.hour >= 14 && now.minute >= 30 && now.hour < 17;
-  }
+    return true; // Selalu kembalikan true agar tombol selalu muncul untuk debugging
+
+    // final now = DateTime.now();
+    // final startTime = DateTime(now.year, now.month, now.day, 14, 30);
+    // final endTime = DateTime(now.year, now.month, now.day, 17, 0);
+    // return now.isAfter(startTime) && now.isBefore(endTime);
+}
 
   void _showLeaveRequestModal() async {
     final result = await showModalBottomSheet(context: context, isScrollControlled: true, builder: (_) => LeaveRequestModal(user: _currentUser));
@@ -249,6 +264,15 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> with WidgetsBindingOb
     }
   }
 
+  void _showActionDialog(String title) {
+    showDialog(context: context, builder: (context) => AlertDialog(
+        title: Text('Pengajuan $title'),
+        content: Text('Fitur untuk mengajukan $title sedang dalam pengembangan.'),
+        actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK'))],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<Widget> screens = [
@@ -259,7 +283,7 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> with WidgetsBindingOb
     ];
     
     return Scaffold(
-      appBar: AppBar(title: Text(_getAppBarTitle()), centerTitle: true, backgroundColor: Colors.blue, foregroundColor: Colors.white),
+      appBar: AppBar(title: Text(_getAppBarTitle(), style: const TextStyle(fontWeight: FontWeight.bold)), centerTitle: true, backgroundColor: Colors.blue, foregroundColor: Colors.white),
       body: IndexedStack(index: _currentIndex, children: screens),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
@@ -333,17 +357,6 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> with WidgetsBindingOb
                 ],
               )),
             ]),
-            const SizedBox(height: 8),
-            Row(children: [
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Jabatan', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-                Text(_currentUser.position ?? '-', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
-              ])),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Golongan', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-                Text(_currentUser.grade ?? '-', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-              ])),
-            ]),
             const Divider(height: 24, thickness: 1),
             _buildStatsRow(),
           ],
@@ -379,13 +392,19 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> with WidgetsBindingOb
   }
   
   Widget _buildActionMenu() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceAround,
+    return Wrap(
+      spacing: 8.0,
+      runSpacing: 12.0,
+      alignment: WrapAlignment.spaceAround,
       children: [
         _buildActionMenuItem(icon: Icons.edit_calendar, label: 'Cuti', onTap: _showAnnualLeaveModal),
         _buildActionMenuItem(icon: Icons.card_travel, label: 'Dinas Luar', onTap: _showDutyLeaveModal),
         _buildActionMenuItem(icon: Icons.sick_outlined, label: 'Izin', onTap: _showLeaveRequestModal),
         _buildActionMenuItem(icon: Icons.home_work_outlined, label: 'WFH', onTap: () => NotificationHelper.show(context, title: 'Oopss..', message: 'Fitur ini hanya tersedia selama kondisi darurat maupun pandemi.', type: NotificationType.info)),
+        _buildActionMenuItem(icon: Icons.location_history, label: 'Lokasi', onTap: () => _showActionDialog("Riwayat Lokasi")),
+        _buildActionMenuItem(icon: Icons.notes_outlined, label: 'Catatan', onTap: () => _showActionDialog("Catatan")),
+        _buildActionMenuItem(icon: Icons.file_copy_outlined, label: 'Dokumen', onTap: () => _showActionDialog("Dokumen Saya")),
+        _buildActionMenuItem(icon: Icons.receipt_long_outlined, label: 'Slip Gaji', onTap: () => _showActionDialog("Slip Gaji")),
       ],
     );
   }
@@ -394,14 +413,17 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> with WidgetsBindingOb
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          children: [
-            Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: Colors.blue.shade800, size: 28)),
-            const SizedBox(height: 8),
-            Text(label, style: const TextStyle(fontSize: 13)),
-          ],
+      child: SizedBox(
+        width: 75,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: Column(
+            children: [
+              Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: Colors.blue.shade800, size: 28)),
+              const SizedBox(height: 8),
+              Text(label, style: const TextStyle(fontSize: 12), textAlign: TextAlign.center),
+            ],
+          ),
         ),
       ),
     );
@@ -437,6 +459,7 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> with WidgetsBindingOb
     );
   }
   
+  // --- [PERBAIKAN UTAMA DI SINI] ---
   Widget _buildAttendanceActionWidget() {
     final now = DateTime.now();
     final today = DateUtils.dateOnly(now);
@@ -444,15 +467,28 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> with WidgetsBindingOb
     return FutureBuilder<List<LeaveRequest>>(
       future: _storageService.getApprovedLeaveRequestsByUserId(_currentUser.uid),
       builder: (context, snapshot) {
-        bool isCoveredByRequest = false;
+        
+        // Cek apakah ada pengajuan yang aktif hari ini
+        LeaveRequest? activeRequest;
         if (snapshot.hasData) {
-          isCoveredByRequest = snapshot.data!.any((leave) => 
-            !today.isBefore(leave.startDate) && !today.isAfter(leave.endDate));
+          try {
+            activeRequest = snapshot.data!.firstWhere((leave) => 
+              !today.isBefore(DateUtils.dateOnly(leave.startDate)) && !today.isAfter(DateUtils.dateOnly(leave.endDate)));
+          } catch (e) {
+            activeRequest = null;
+          }
         }
 
-        if (isCoveredByRequest) {
-          return const _StatusInfo(message: 'Anda saat ini cuti/izin/dinas luar.', icon: Icons.task_alt_outlined, color: Colors.grey);
+        // Jika ADA pengajuan yang aktif, tampilkan detailnya
+        if (activeRequest != null) {
+          String message = 'Anda saat ini sedang ${activeRequest.requestType}.';
+          if (activeRequest.requestType == 'Cuti' && activeRequest.leaveCategory != null) {
+            message = '${activeRequest.leaveCategory!}.';
+          }
+          return _StatusInfo(message: message, icon: Icons.task_alt_outlined, color: Colors.blue);
         }
+
+        // Jika tidak ada pengajuan, lanjutkan logika absensi biasa
         if (now.weekday == DateTime.sunday) {
           return const _StatusInfo(message: 'Hari ini libur. Waktunya istirahat!', icon: Icons.weekend_outlined, color: Colors.blueGrey);
         }
