@@ -163,17 +163,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _navigateToFaceEnrollment() async {
     final result = await Navigator.push(
       context, 
-      MaterialPageRoute(builder: (context) => FaceEnrollmentScreen(userId: _currentUser.uid))
+      MaterialPageRoute(builder: (context) => const FaceEnrollmentScreen())
     );
     if (result == true && mounted) {
+      // Notifikasi sukses sudah ditampilkan oleh FaceEnrollmentScreen
+      // (satu sumber, agar tak muncul dua dialog).
       await _refreshUserData();
-      NotificationHelper.show(
-        // ignore: use_build_context_synchronously
-        context, 
-        title: "Perekaman Berhasil", 
-        message: "Data wajah Anda telah berhasil disimpan.", 
-        type: NotificationType.success,
-      );
     }
   }
 

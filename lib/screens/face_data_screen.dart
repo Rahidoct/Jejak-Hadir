@@ -21,7 +21,7 @@ class FaceDataScreen extends StatelessWidget {
   Future<void> _navigateToFaceEnrollment(BuildContext context) async {
     final result = await Navigator.push(
       context, 
-      MaterialPageRoute(builder: (context) => FaceEnrollmentScreen(userId: user.uid))
+      MaterialPageRoute(builder: (context) => const FaceEnrollmentScreen())
     );
     
     if (result == true && context.mounted) {

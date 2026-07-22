@@ -51,6 +51,9 @@ dependencies:
   # Integrasi backend absensi (Fase 0)
   http: ^1.2.2
   flutter_secure_storage: ^9.2.2
+  # Pengenalan wajah (Fase 1c): model ONNX MobileFaceNet
+  flutter_onnxruntime: ^1.8.3
+  path_provider: ^2.1.4
 
 dev_dependencies:
   flutter_test:
@@ -90,6 +93,7 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/models/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

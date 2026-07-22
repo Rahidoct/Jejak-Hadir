@@ -1,234 +1,225 @@
 // lib/screens/face_enrollment_screen.dart
-
+//
+// Pendaftaran wajah (enrollment) untuk absensi.
+// Ambil 3 sampel foto → hitung embedding di HP (MobileFaceNet ONNX) →
+// kirim ke server (op=enroll, model=arcface512).
+//
+// Catatan: embedding dihitung di HP, tetapi PENCOCOKAN saat absen tetap
+// dilakukan server — aplikasi tak pernah memutuskan lolos/tidaknya.
 import 'dart:convert';
+
 import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
-import 'package:jejak_hadir_app/services/local_storage_service.dart';
-import 'package:image/image.dart' as img;
+
+import '../helpers/notification_helper.dart';
+import '../services/api_service.dart';
+import '../services/face_embedder.dart';
 
 class FaceEnrollmentScreen extends StatefulWidget {
-  final String userId;
-  const FaceEnrollmentScreen({super.key, required this.userId});
+  const FaceEnrollmentScreen({super.key});
+
   @override
   State<FaceEnrollmentScreen> createState() => _FaceEnrollmentScreenState();
 }
 
 class _FaceEnrollmentScreenState extends State<FaceEnrollmentScreen> {
-  CameraController? _cameraController;
-  FaceDetector? _faceDetector;
-  bool _isCameraInitialized = false;
-  bool _isProcessing = false;
-  String _message = "Posisikan wajah Anda di dalam bingkai";
+  static const int _targetSamples = 3;
+
+  CameraController? _cam;
+  bool _ready = false;
+  bool _busy = false;
+  String _msg = 'Menyiapkan kamera…';
+  final List<List<double>> _samples = [];
 
   @override
   void initState() {
     super.initState();
-    _initializeCameraAndDetector();
+    _init();
   }
 
-  Future<void> _initializeCameraAndDetector() async {
-    final options = FaceDetectorOptions(
-      performanceMode: FaceDetectorMode.accurate,
-    );
-    _faceDetector = FaceDetector(options: options);
+  Future<void> _init() async {
+    try {
+      await FaceEmbedder.instance.init(); // muat model lebih awal
+      final cams = await availableCameras();
+      final front = cams.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.front,
+        orElse: () => cams.first,
+      );
+      _cam = CameraController(front, ResolutionPreset.medium, enableAudio: false);
+      await _cam!.initialize();
+      if (!mounted) return;
+      setState(() {
+        _ready = true;
+        _msg = 'Posisikan wajah di dalam bingkai, lalu tekan Ambil Sampel.';
+      });
+    } catch (e) {
+      if (mounted) setState(() => _msg = 'Gagal menyiapkan kamera/model: $e');
+    }
+  }
 
-    final cameras = await availableCameras();
-    CameraDescription frontCamera = cameras.firstWhere(
-      (camera) => camera.lensDirection == CameraLensDirection.front,
-      orElse: () => cameras.first,
-    );
-
-    _cameraController = CameraController(
-      frontCamera,
-      ResolutionPreset.medium,
-      enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.yuv420,
-    );
+  Future<void> _capture() async {
+    if (!_ready || _busy || _cam == null) return;
+    setState(() { _busy = true; _msg = 'Memproses wajah…'; });
 
     try {
-      await _cameraController!.initialize();
+      final shot = await _cam!.takePicture();
+      final bytes = await shot.readAsBytes();
+      final res = await FaceEmbedder.instance.processJpeg(bytes);
+
+      _samples.add(res.embedding);
       if (!mounted) return;
 
-      setState(() {
-        _isCameraInitialized = true;
-      });
-
-      _cameraController!.startImageStream((image) {
-        if (!_isProcessing) {
-          _processImage(image);
-        }
-      });
-    } catch (e) {
-      if (kDebugMode) {
-        print("FaceEnrollment: Gagal total inisialisasi kamera: $e");
-      }
-      if (mounted) {
-        setState(() {
-          _message = "Gagal memulai kamera. Mohon restart aplikasi.";
-        });
-      }
-    }
-  }
-
-  Future<void> _processImage(CameraImage image) async {
-    if (!mounted) return;
-    _isProcessing = true;
-
-    try {
-      // --- [PERBAIKAN UTAMA DAN FINAL ADA DI SINI] ---
-      
-      // 1. Gabungkan semua data byte dari semua 'plane' gambar.
-      final WriteBuffer allBytes = WriteBuffer();
-      for (final Plane plane in image.planes) {
-        allBytes.putUint8List(plane.bytes);
-      }
-      final bytes = allBytes.done().buffer.asUint8List();
-
-      // 2. Tentukan ukuran dan rotasi gambar.
-      final Size imageSize = Size(image.width.toDouble(), image.height.toDouble());
-      final camera = _cameraController!.description;
-      final imageRotation = InputImageRotationValue.fromRawValue(camera.sensorOrientation) ?? InputImageRotation.rotation0deg;
-
-      // 3. [KUNCI PERBAIKAN] Jangan baca format dari gambar. Paksa ke NV21.
-      // Ini adalah format standar untuk YUV420 di Android.
-      final inputImageFormat = InputImageFormat.nv21;
-
-      // 4. Buat metadata dengan format yang sudah kita paksa.
-      final metadata = InputImageMetadata(
-        size: imageSize,
-        rotation: imageRotation,
-        format: inputImageFormat,
-        bytesPerRow: image.planes[0].bytesPerRow,
-      );
-
-      // 5. Buat InputImage dari data yang sudah disiapkan.
-      final inputImage = InputImage.fromBytes(bytes: bytes, metadata: metadata);
-      
-      // 6. Proses gambar dengan ML Kit.
-      List<Face> faces = await _faceDetector!.processImage(inputImage);
-      
-      if (faces.isNotEmpty && mounted) {
-        await _cameraController?.stopImageStream();
-        
-        final faceImage = _cropFace(image, faces.first);
-        if (faceImage == null) {
-          // Jika gagal crop, jangan lanjutkan
-          if (kDebugMode) print("Gagal memotong wajah dari gambar.");
-          _isProcessing = false;
-          return;
-        }
-
-        final String base64Image = base64Encode(img.encodeJpg(faceImage));
-        await LocalStorageService().updateUserFaceData(widget.userId, base64Image);
-        
-        setState(() {
-          _message = "Wajah terdeteksi! Berhasil.";
-        });
-        Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) {
-            Navigator.pop(context, true);
-          }
-        });
+      if (_samples.length >= _targetSamples) {
+        setState(() => _msg = 'Mengirim ${_samples.length} sampel ke server…');
+        await _submit();
       } else {
-        // Jika tidak ada wajah terdeteksi, biarkan proses berlanjut
-        _isProcessing = false;
+        setState(() {
+          _busy = false;
+          _msg = 'Sampel ${_samples.length}/$_targetSamples tersimpan. '
+                 'Ubah sedikit posisi/ekspresi, lalu ambil lagi.';
+        });
       }
+    } on FaceException catch (e) {
+      if (mounted) setState(() { _busy = false; _msg = e.message; });
     } catch (e) {
-      if (kDebugMode) {
-        // Log error yang lebih spesifik
-        print("FaceEnrollment: Error saat deteksi wajah: $e");
-      }
-      _isProcessing = false;
+      if (mounted) setState(() { _busy = false; _msg = 'Gagal memproses: $e'; });
     }
   }
 
-  img.Image? _cropFace(CameraImage image, Face face) {
-    // Fungsi ini mengkonversi gambar YUV (grayscale plane) ke format yang bisa di-crop
+  Future<void> _submit() async {
     try {
-      final img.Image convertedImage = img.Image.fromBytes(
-        width: image.width, 
-        height: image.height,
-        bytes: image.planes[0].bytes.buffer, 
-        format: img.Format.uint8, // Format LUMINANCE (grayscale)
-        numChannels: 1
+      await ApiService.instance.postForm(
+        'absensi_action&op=enroll&model=${FaceEmbedder.modelVersion}',
+        {'descriptors': jsonEncode(_samples)},
+        auth: true,
+      );
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _msg = 'Perekaman wajah berhasil ✓';
+      });
+
+      // Tampilkan notifikasi lalu TUNGGU sampai ditutup pengguna, baru keluar.
+      // (Kalau tidak ditunggu, Navigator.pop akan menutup dialognya — bukan
+      // layar ini — sehingga layar tersangkut.)
+      await NotificationHelper.show(
+        context,
+        title: 'Perekaman Wajah Berhasil',
+        message: 'Data wajah Anda sudah tersimpan. Sekarang Anda bisa melakukan absensi.',
+        type: NotificationType.success,
       );
 
-      final x = face.boundingBox.left.toInt();
-      final y = face.boundingBox.top.toInt();
-      final w = face.boundingBox.width.toInt();
-      final h = face.boundingBox.height.toInt();
-
-      final img.Image croppedImage = img.copyCrop(convertedImage, x: x, y: y, width: w, height: h);
-      return croppedImage;
-    } catch (e) {
-      if (kDebugMode) print("Error saat cropping: $e");
-      return null;
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _samples.clear();
+        _msg = 'Gagal mendaftar: ${e.message}. Silakan ulangi.';
+      });
     }
   }
 
   @override
   void dispose() {
-    _cameraController?.stopImageStream();
-    _cameraController?.dispose();
-    _faceDetector?.close();
+    _cam?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final progress = _samples.length / _targetSamples;
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Perekaman Wajah"),
-        foregroundColor: Colors.white,
+        title: const Text('Pendaftaran Wajah'),
         backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
       ),
-      body: _isCameraInitialized
-          ? Stack(
-              fit: StackFit.expand,
-              children: [
-                CameraPreview(_cameraController!),
-                Center(
-                  child: Container(
-                    width: MediaQuery.of(context).size.width * 0.7,
-                    height: MediaQuery.of(context).size.height * 0.5,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(150),
-                      // ignore: deprecated_member_use
-                      border: Border.all(color: Colors.white.withOpacity(0.8), width: 4),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  bottom: 50,
-                  left: 20,
-                  right: 20,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                    decoration: BoxDecoration(
-                      // ignore: deprecated_member_use
-                      color: Colors.black.withOpacity(0.6),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      _message,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500),
-                    ),
-                  ),
-                )
-              ],
-            )
-          : Center(
+      body: !_ready
+          ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const CircularProgressIndicator(),
-                  const SizedBox(height: 20),
-                  Text(_message, style: const TextStyle(fontSize: 16)),
+                  const SizedBox(height: 18),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Text(_msg, textAlign: TextAlign.center),
+                  ),
                 ],
-              )
+              ),
+            )
+          : Stack(
+              fit: StackFit.expand,
+              children: [
+                CameraPreview(_cam!),
+                // Bingkai panduan
+                Center(
+                  child: Container(
+                    width: MediaQuery.of(context).size.width * 0.72,
+                    height: MediaQuery.of(context).size.height * 0.46,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(200),
+                      border: Border.all(color: Colors.white70, width: 4),
+                    ),
+                  ),
+                ),
+                // Panel bawah
+                Positioned(
+                  left: 0, right: 0, bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+                    decoration: const BoxDecoration(
+                      color: Colors.black87,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        LinearProgressIndicator(
+                          value: progress,
+                          backgroundColor: Colors.white24,
+                          color: Colors.lightBlueAccent,
+                          minHeight: 6,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Sampel ${_samples.length} / $_targetSamples',
+                          style: const TextStyle(
+                              color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _msg,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.white70, fontSize: 13),
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _busy ? null : _capture,
+                            icon: _busy
+                                ? const SizedBox(
+                                    height: 18, width: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                : const Icon(Icons.camera_alt),
+                            label: Text(_busy ? 'Memproses…' : 'Ambil Sampel'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 15),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(30)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
     );
   }

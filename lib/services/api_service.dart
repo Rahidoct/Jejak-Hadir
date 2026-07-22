@@ -70,6 +70,34 @@ class ApiService {
     }
   }
 
+  /// POST multipart — dipakai saat perlu mengunggah berkas (mis. foto bukti absen).
+  /// Timeout lebih panjang karena ada unggahan berkas.
+  Future<Map<String, dynamic>> postMultipart(
+    String query,
+    Map<String, String> fields, {
+    String? filePath,
+    String fileField = 'foto',
+    bool auth = true,
+  }) async {
+    try {
+      final req = http.MultipartRequest('POST', ApiConfig.uri(query));
+      if (auth) req.headers.addAll(await _authHeader());
+      req.fields.addAll(fields);
+      if (filePath != null && filePath.isNotEmpty) {
+        req.files.add(await http.MultipartFile.fromPath(fileField, filePath));
+      }
+      final streamed = await req.send().timeout(const Duration(seconds: 45));
+      final res = await http.Response.fromStream(streamed);
+      return _decode(res);
+    } on ApiException {
+      rethrow;
+    } on TimeoutException {
+      throw ApiException('Server tidak merespons (timeout) saat mengunggah.');
+    } catch (_) {
+      throw ApiException('Tidak dapat terhubung ke server. Cek koneksi & alamat server.');
+    }
+  }
+
   /// GET. Default ber-auth (token dilampirkan).
   Future<Map<String, dynamic>> get(String query, {bool auth = true}) async {
     try {

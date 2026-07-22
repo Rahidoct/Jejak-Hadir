@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 enum NotificationType { success, error, confirm, info }
 
 class NotificationHelper {
-  // Fungsi utama untuk menampilkan dialog kustom
-  static void show(
+  // Fungsi utama untuk menampilkan dialog kustom.
+  // Mengembalikan Future agar pemanggil BISA menunggu dialog ditutup
+  // (mis. sebelum menutup halaman). Pemanggil lama boleh mengabaikannya.
+  static Future<void> show(
     BuildContext context, {
     required String title,
     required String message,
@@ -34,7 +36,7 @@ class NotificationHelper {
         break;
     }
 
-    showDialog(
+    return showDialog<void>(
       context: context,
       barrierDismissible: type != NotificationType.confirm, // Dialog konfirmasi tidak bisa ditutup dengan tap di luar
       builder: (BuildContext context) {

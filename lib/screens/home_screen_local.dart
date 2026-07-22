@@ -2,23 +2,21 @@
 
 // Import libraries
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:uuid/uuid.dart';
 
 // Import local files
 import '../helpers/notification_helper.dart';
 import '../models/leave_request_local.dart';
-import '../models/attendance_local.dart';
 import '../models/user_local.dart';
+import '../services/absensi_service.dart';
 import '../services/local_storage_service.dart';
 
 // Import screens
 import 'leave_request_modal.dart';
 import 'annual_leave_modal.dart';
 import 'duty_leave_modal.dart';
+import 'absen_screen.dart';
 import 'history_screen_local.dart';
 import 'schedule_screen.dart';
 import 'profile_screen.dart';
@@ -32,7 +30,7 @@ class HomeScreenLocal extends StatefulWidget {
 
 class _HomeScreenLocalState extends State<HomeScreenLocal> with WidgetsBindingObserver {
   int _currentIndex = 0;
-  bool _isProcessing = false;
+  final bool _isProcessing = false;
   bool _hasCheckedInToday = false;
   bool _hasCheckedOutToday = false; 
   
@@ -44,7 +42,6 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> with WidgetsBindingOb
 
   int _historyKey = 0;
   final LocalStorageService _storageService = LocalStorageService();
-  final Uuid _uuid = const Uuid();
   late LocalUser _currentUser;
 
   @override
@@ -80,15 +77,21 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> with WidgetsBindingOb
     await _calculateYearlyStats();
   }
 
+  /// Status absen hari ini diambil dari SERVER (bukan penyimpanan lokal),
+  /// karena sejak Fase 1c absen tersimpan di server. Inilah yang menentukan
+  /// tombol menjadi "Absen Masuk" atau "Absen Pulang".
   Future<void> _loadLastAttendanceStatus() async {
-    final attendances = await _storageService.getAttendancesByUserId(_currentUser.uid);
-    final now = DateTime.now();
-    final todayAttendances = attendances.where((att) => DateUtils.isSameDay(att.timestamp, now)).toList();
-    if (mounted) {
-      setState(() {
-        _hasCheckedInToday = todayAttendances.any((att) => att.type == 'check_in');
-        _hasCheckedOutToday = todayAttendances.any((att) => att.type == 'check_out');
-      });
+    try {
+      final s = await AbsensiService.instance.status();
+      final today = (s['today'] as Map?) ?? const {};
+      if (mounted) {
+        setState(() {
+          _hasCheckedInToday = today['sudah_masuk'] == true;
+          _hasCheckedOutToday = today['sudah_pulang'] == true;
+        });
+      }
+    } catch (_) {
+      // Gagal/offline: pertahankan status terakhir agar tidak menyesatkan.
     }
   }
 
@@ -163,62 +166,17 @@ class _HomeScreenLocalState extends State<HomeScreenLocal> with WidgetsBindingOb
     }
   }
 
+  /// Absen kini lewat layar verifikasi wajah. Server yang memutuskan sah/tidaknya
+  /// (cocok wajah, dalam radius, dalam jendela waktu) dan menentukan masuk/pulang.
+  /// Parameter [type] dipertahankan agar pemanggil lama tetap kompatibel.
   Future<void> _performAttendance(String type) async {
-    setState(() => _isProcessing = true);
-    var status = await Permission.location.request();
-    if (!status.isGranted) {
-      if (!mounted) return;
-      setState(() => _isProcessing = false);
-      NotificationHelper.show(
-        context,
-        title: "Akses Ditolak",
-        message: "Izin lokasi diperlukan.",
-        type: NotificationType.error,
-      );
-      return;
-    }
-    try {
-      // ignore: deprecated_member_use
-      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-      final now = DateTime.now();
-      final newAttendance = LocalAttendance(
-        id: _uuid.v4(),
-        userId: widget.user.uid,
-        type: type,
-        timestamp: now,
-        latitude: position.latitude,
-        longitude: position.longitude,
-      );
-      
-      await _storageService.addAttendance(newAttendance);
-      setState(() { _historyKey++; });
+    final ok = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AbsenScreen()),
+    );
+    if (ok == true && mounted) {
+      setState(() => _historyKey++);
       await _loadInitialData();
-
-      if (type == 'check_in' && now.hour >= 8) {
-        // ignore: use_build_context_synchronously
-        NotificationHelper.show(context, title: "Astagfirullah!", message: "Jam segini baru datang? Hadeh! parah banget.", type: NotificationType.info);
-      } else {
-        // ignore: use_build_context_synchronously
-        NotificationHelper.show(context, title: "Sipph!", message: "Absen ${type == 'check_in' ? 'masuk' : 'pulang'} berhasil dicatat.", type: NotificationType.success);
-      }
-    } catch (e) {
-      if (!mounted) return;
-      String message;
-      if (e.toString().contains('PERMISSION_DENIED')) {
-        message = 'Izin lokasi ditolak.';
-      } else if (e.toString().contains('Location service disabled')) {
-        message = 'Layanan lokasi (GPS) tidak aktif.';
-      } else {
-        message = 'Gagal mendapatkan lokasi.';
-      }
-      NotificationHelper.show(
-        context,
-        title: "Terjadi Kesalahan",
-        message: message,
-        type: NotificationType.error,
-      );
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
     }
   }
 

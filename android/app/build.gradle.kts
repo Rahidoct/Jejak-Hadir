@@ -24,7 +24,8 @@ android {
         applicationId = "com.example.jejak_hadir_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // ONNX Runtime (pengenalan wajah) mensyaratkan minSdk 24 (Android 7.0).
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
